@@ -8,4 +8,4 @@ scipy
 tqdm
 pysiaf
 poppy
-webbpsf
+webbpsf>=1.2.2
