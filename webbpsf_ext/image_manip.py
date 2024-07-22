@@ -14,6 +14,7 @@ try:
 except ImportError:
     OPENCV_EXISTS = False
 
+from astropy.convolution import Gaussian2DKernel
 from astropy.convolution import convolve, convolve_fft
 from astropy.io import fits
 
@@ -368,9 +369,9 @@ def cv_shift(image, xshift, yshift, pad=False, cval=0.0, interp='lanczos', **kwa
     
     return offset
 
-def fractional_image_shift(imarr, xshift, yshift, method='opencv', 
-                           oversample=1, gstd_pix=None, return_oversample=False,
-                           window_func=None, total=True, **kwargs):
+def fractional_image_shift(imarr, xshift, yshift, method='fourier', 
+                           oversample=1, return_oversample=False, order=1,
+                           gstd_pix=None, window_func=None, total=True, **kwargs):
     """Shift image(s) by a fractional amount
 
     Will first fix any NaNs using astropy convolution.
@@ -447,7 +448,7 @@ def fractional_image_shift(imarr, xshift, yshift, method='opencv',
                 ind_nan = np.isnan(imarr[i])
                 imarr_conv[i][ind_nan] = im_mean[ind_nan]
             # Use astropy convolve to fix remaining NaNs
-            imarr_conv = np.array([convolve(im, kernel) for im in imarr])
+            imarr_conv = np.array([convolve(im, kernel) for im in imarr_conv])
             for i in range(imarr.shape[0]):
                 ind_nan = np.isnan(imarr[i])
                 imarr[i][ind_nan] = imarr_conv[i][ind_nan]
@@ -459,8 +460,10 @@ def fractional_image_shift(imarr, xshift, yshift, method='opencv',
         del imarr_conv
 
     # Rebin pixels
-    if oversample>1:
-        imarr = frebin(imarr, scale=oversample, total=total)
+    if oversample!=1:
+        rescale_pix = kwargs.pop('rescale_pix', False)
+        imarr = zrebin(imarr, oversample, order=order, 
+                       total=total, rescale_pix=rescale_pix)
         xsh = xshift * oversample
         ysh = yshift * oversample
     else:
@@ -512,6 +515,306 @@ def fractional_image_shift(imarr, xshift, yshift, method='opencv',
         return imarr_shift
     else:
         return frebin(imarr_shift, scale=1/oversample, total=total)
+
+def replace_nans_griddata(image, method='cubic', in_place=True, **kwargs):
+    """Replace NaNs in an image using griddata interpolation"""
+
+    from scipy.interpolate import griddata
+
+    if not in_place:
+        image = image.copy()
+
+    xv = np.arange(image.shape[-1])
+    yv = np.arange(image.shape[-2])
+    xg, yg = np.meshgrid(xv, yv)
+    ind_nan = np.isnan(image)
+
+    fill_value = kwargs.get('fill_value', np.nan)
+    rescale = kwargs.get('rescale', False)
+    zgrid = griddata((xg[~ind_nan], yg[~ind_nan]), image[~ind_nan], 
+                     (xg[ind_nan], yg[ind_nan]), method=method, 
+                     fill_value=fill_value, rescale=rescale)
+
+    image[ind_nan] = zgrid
+    return image
+
+def replace_nans(image, mean_func=np.nanmean, in_place=False,
+                 use_griddata=True, grid_method='cubic', 
+                 x_stddev=2, use_fft=False, **kwargs):
+    """ Replace NaNs in an image with interpolated values
+
+    If input is a cube, first replaces NaNs using mean of cube.
+
+    Remaining NaNs are then replaced using griddata interpolation.
+    Default is cubic interpolation.
+
+    Any remaining NaNs are then replaced using astropy convolution.
+
+    Parameters
+    ----------
+    image : ndarray
+        2D image or 3D image cube [nz,ny,nx].
+    mean_func : function
+        Function to use for calculating the mean of the cube. Default is np.nanmean.
+    use_griddata : bool
+        Use griddata interpolation to fix NaNs. Default is True.
+    method : str
+        Interpolation method to use for griddata. Default is 'cubic'.
+    x_stddev : float
+        Standard deviation of Gaussian kernel for smoothing. Default is 2.
+    use_fft : bool
+        Use FFT convolution. Default is False.
+
+    Keyword Args
+    ------------
+    boundary : str, optional
+        A flag indicating how to handle boundaries:
+            * `None` : Set the ``result`` values to zero where the kernel
+                extends beyond the edge of the array.
+            * 'fill' : (default) Set values outside the array boundary to ``fill_value``.
+            * 'wrap' : Periodic boundary that wrap to the other side of ``array``.
+            * 'extend' : Set values outside the array to the nearest ``array``
+                value.
+
+    fill_value : float, optional
+        The value to use outside the array when using ``boundary='fill'``.
+    """
+
+    cfunc = convolve_fft if use_fft else convolve
+
+    shape = image.shape
+    ndim = len(shape)
+
+    if ndim==3 and shape[0]==1:
+        # If only one image in the cube, then just use 2D
+        image = image[0]
+        ndim = 2
+
+    if not in_place:
+        image = image.copy()
+
+    # Replace NaNs with astropy convolved image values
+    ind_nan_all = np.isnan(image)
+    if ind_nan_all.any():
+        kernel = Gaussian2DKernel(x_stddev=x_stddev)
+        if ndim==3:
+            im_mean = mean_func(image, axis=0)
+            # First replace NaNs with mean of all images
+            for i in range(shape[0]):
+                ind_nan_i = ind_nan_all[i]
+
+                # First replace NaNs with mean of all images
+                imfix = image[i].copy()
+                imfix[ind_nan_i] = im_mean[ind_nan_i]
+
+                imfix = replace_nans(imfix, mean_func=mean_func, in_place=True,
+                                     use_griddata=use_griddata, grid_method=grid_method, 
+                                     x_stddev=x_stddev, use_fft=use_fft, **kwargs)
+
+                # Replace NaNs with fixed values
+                image[i][ind_nan_i] = imfix[ind_nan_i]               
+        elif ndim==2:
+
+            ind_nan = np.isnan(image)
+            # print(ind_nan.sum())
+
+            # Use scipy griddata to fix NaNs
+            if use_griddata:
+                image = replace_nans_griddata(image, method=grid_method, 
+                                              in_place=True, **kwargs)
+                ind_nan = np.isnan(image)
+            else:
+                ind_nan = ind_nan_all
+
+            while ind_nan.any():
+                # Use astropy convolve to fix remaining NaNs
+                image[ind_nan] = cfunc(image, kernel, **kwargs)[ind_nan]
+                ind_nan = np.isnan(image)
+
+                # print(ind_nan.sum())
+        else:
+            raise ValueError(f'Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
+
+    return image.reshape(shape)
+
+def image_shift_with_nans(image, xshift, yshift, shift_method='fourier', interp='linear',
+                          gstd_pix=None, window_func=None, grid_method='cubic',
+                          oversample=1, return_oversample=False, total=True, order=1,
+                          pad=False, cval=np.nan, preserve_nans=False,
+                          return_padded=False, **kwargs):
+    """Shift image by a fractional amount accounting for NaNs
+    
+    Parameters
+    ----------
+    image : ndarray
+        2D image or 3D image cube [nz,ny,nx].
+    xshift : float
+        Shift in x direction (pixels).
+    yshift : float
+        Shift in y direction (pixels).
+    shift_method : str
+        Method to use for shifting. Options are:
+        - 'fourier' : Shift in Fourier space
+        - 'fshift' : Shift using interpolation
+        - 'opencv' : Shift using OpenCV warpAffine
+
+    interp : str
+        Type of interpolation to use during the sub-pixel shift. Valid values are:
+        - 'fshift' : 'linear', 'cubic', and 'quintic' (default='linear')
+        - `opencv` : 'linear', 'cubic', and 'lanczos' (default='lanczos')
+
+    grid_method : str
+        Interpolation method over NaNs to use for griddata. Default is 'cubic'.
+    oversample : int
+        Factor to oversample the image before sub-pixel shifting. Default is 1.
+        An oversample factor of 2 will increase the image size by 2x in each dimension.
+    return_oversample : bool
+        Return the oversampled image after shifting. Default is False.
+    total : bool
+        If True, then the total flux in the image is conserved. Default is True.
+        Would want to set this to false if the image is in units of surface brightness
+        (e.g., MJy/sr) and not flux (e.g., MJy).
+    order : int
+        The order of the spline interpolation for `zrebin` function, Default is 3. 
+        Only used if oversample>1. If order=0, then `frebin` is used.
+    pad : bool
+        Pad the image before shifting, then truncate? Default is False.
+    cval : sequence or float, optional
+        The values to set the padded values for each axis. Default is NaN. 
+        NaNs are then replaced with interpolated values during shifted and
+        can be added back to the image using `preserve_nans`.
+    preserve_nans : bool
+        Add NaNs back to the image after shifting. Default is False.
+    return_padded : bool
+        Return the padded image after shifting. Default is False.
+
+    
+    Keyword Args
+    ------------
+    gstd_pix : float
+        Standard deviation of Gaussian kernel for smoothing. Default is None.
+    window_func : string, float, or tuple
+        Name of window function from `scipy.signal.windows` to use prior to
+        shifting. The idea is to reduce artifacts from high frequency 
+        information during sub-pixel shifting. This effectively acts as a 
+        low-pass filter applied to the Fourier transform of the image prior 
+        to shifting. Uses `skimage.filters.window()` to generate the window.
+        Will apply to oversampled image, so make sure to adjust any function
+        parameters accordingly.
+        For example:
+            .. code-block:: python
+                window_func = 'hann'
+                window_func = ('tukey', 0.25) # alpha=0.25
+                window_func = ('gaussian', 5) # std dev of 5 pixels
+    """
+
+
+    from .maths import round_int
+
+    ztol = 1e-5
+
+    rescale_pix = kwargs.pop('rescale_pix', False)
+
+    if return_padded:
+        pad = True
+
+    shape = image.shape
+    ndim = len(shape)
+    if ndim==2:
+        ny, nx = shape
+        nz = 1
+        imarr = image.reshape([nz,ny,nx])
+    elif ndim==3:
+        nz, ny, nx = shape
+        imarr = image
+    else:
+        raise ValueError(f'Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
+    
+    # Pad image edges 
+    # print('orig:', imarr.shape, np.nansum(imarr))
+    if pad:
+        padx = round_int(np.abs(xshift)) 
+        pady = round_int(np.abs(yshift))
+        new_shape = (ny+2*np.abs(pady), nx+2*np.abs(padx))
+        imarr = crop_image(imarr, new_shape, fill_val=cval)
+    else:
+        padx = 0; pady = 0
+
+    # print('padded:', imarr.shape, padx, pady, np.nansum(imarr))
+
+    # Store image of NaNs and transform in same was as image
+    if preserve_nans:
+        imnans = np.isnan(imarr).astype('float')
+
+    # Replace NaN with interpolated / extrapolated values
+    imarr = replace_nans(imarr, in_place=False, grid_method=grid_method, **kwargs)
+    # print('replace nans:', imarr.shape, np.nansum(imarr))
+
+    # Apply Gaussian smoothing
+    if (gstd_pix is not None) and (gstd_pix>0):
+        gstd = gstd_pix
+        kernel = Gaussian2DKernel(x_stddev=gstd)
+        if len(imarr.shape)==3:
+            imarr = np.array([convolve(im, kernel) for im in imarr])
+        else:
+            imarr = convolve(imarr, kernel)
+
+    # Rebin pixels
+    if oversample!=1:
+        # print(np.nansum(imarr), oversample, order, total)
+        imarr = zrebin(imarr, oversample, order=order, 
+                       total=total, rescale_pix=rescale_pix)
+        # print(np.nansum(imarr), oversample, order, total)
+
+        # Rebin NaN image
+        if preserve_nans:
+            imnans = frebin(imnans, scale=oversample, total=False)
+
+        xsh = xshift * oversample
+        ysh = yshift * oversample
+    else:
+        xsh = xshift
+        ysh = yshift
+
+    # print('rebin:', imarr.shape, xsh, ysh, np.nansum(imarr))
+
+    # Perform Gaussian smoothing, lowpass filtering, and image shift
+    imarr_final = fractional_image_shift(imarr, xsh, ysh, method=shift_method, interp=interp,
+                                         gstd_pix=0, window_func=window_func,
+                                         oversample=1, return_oversample=False, **kwargs)
+
+    # print('shifted:', imarr_final.shape, np.nansum(imarr_final))
+
+    # Shift NaN image
+    if preserve_nans:
+        imnans = fshift(imnans, xsh, ysh, pad=True, cval=1)
+
+    # Resample back to original size
+    if not (return_oversample or oversample==1):
+        imarr_final = frebin(imarr_final, scale=1/oversample, total=total)
+        if preserve_nans:
+            imnans = frebin(imnans, scale=1/oversample, total=False)
+
+        # print('resample:', imarr_final.shape, np.nansum(imarr_final))
+
+    # Add NaNs back to the image
+    if preserve_nans:
+        imarr_final[imnans>ztol] = np.nan
+
+    if not return_padded:
+        x1, x2 = (padx, padx+nx)
+        y1, y2 = (pady, pady+ny)
+        if return_oversample and oversample>1:
+            x1, x2, y1, y2 = np.array([x1, x2, y1, y2]) * oversample
+        imarr_final = imarr_final[:, y1:y2, x1:x2]
+        # print('crop:', imarr_final.shape, (x1, x2), (y1, y2), np.nansum(imarr_final))
+
+    if ndim==2:
+        imarr_final = imarr_final[0]
+
+    return imarr_final
+
+
 
 
 ###########################################################################
@@ -970,8 +1273,6 @@ def rotate_offset(data, angle, cen=None, cval=0.0, order=1,
 
     """
 
-    from .imreg_tools import crop_image
-
     # Return input data if angle is set to None or 0
     # and if 
     if ((angle is None) or (angle==0)) and (cen is None):
@@ -1053,6 +1354,93 @@ def rotate_offset(data, angle, cen=None, cval=0.0, order=1,
     # Drop out single-valued dimensions
     return images_fin.squeeze()
 
+def zrebin(image, oversample, order=3, mode='reflect', total=True, 
+           rescale_pix=False, **kwargs):
+    """Rebin image using scipy.ndimage.zoom
+    
+    Parameters
+    ----------
+    image : ndarray
+        Input image
+    oversample : float
+        Factor to scale output array size. A scale of 2 will increase
+        the number of pixels by 2 (ie., finer pixel scale). If less than
+        1, then will decrease the number of pixels using `frebin`; no
+        interpolation is performed.
+    order : int
+        The order of the spline interpolation, default is 3. Only used
+        if oversample>1. If order=0, then `frebin` is used.
+    mode : str
+        Points outside the boundaries of the input are filled according
+        to the given mode ('constant', 'nearest', 'reflect', 'mirror' or 'wrap').
+        Default is 'reflect'. Only used if oversample>1.
+    total : bool
+        Conserves the surface flux. If True, the output pixels 
+        will be the sum of pixels within the appropriate box of 
+        the input image. Otherwise, they will be the average.
+    """
+
+
+    import scipy.ndimage
+    def dtype_check(result, input_dtype):
+        """Check if resultis same as input dtype
+        
+        If total is True, then prints a warning, otherwise 
+        changes back to input dtype.
+        """
+        # Because we're preserving total, may be unable to preserve input dtype
+        if result.dtype != input_dtype:
+            if total:
+                _log.warning(f'dtype was updated from {input_dtype} to {result.dtype}')
+            else:
+                result = result.astype(input_dtype)
+        return result
+
+    # Check if dtype is preserved
+    input_dtype = image.dtype
+
+    shape = image.shape
+    ndim = len(shape)
+
+    if ndim==2:
+        if oversample==1:
+            return image
+        elif (oversample<1) or (order is None) or (order==0):
+            return frebin(image, scale=oversample, total=total)
+        else:
+            # Result has a sum that is ~oversample**2 times the input
+            result = scipy.ndimage.zoom(image, oversample, order=order, mode=mode, **kwargs)
+
+            # Zoom does not preserve flux within a set of oversampled pixels
+            # Ensure pixel values are conserved if oversample>1
+            if rescale_pix:
+                res_reshape = result.reshape((shape[0],oversample,shape[1],oversample))
+                res_trans = res_reshape.transpose(1,3,0,2).reshape([-1,shape[0],shape[1]])
+                res_resum = res_trans.sum(axis=0)
+                res_scale = image / res_resum
+                res_trans_new = res_trans * res_scale
+                res_reshape_new = res_trans_new.reshape([oversample,oversample,shape[0],shape[1]])
+                result_new = res_reshape_new.transpose(2,0,3,1).reshape(result.shape)
+                result = result_new.copy()
+                del result_new, res_reshape_new, res_trans_new, res_scale, res_resum, res_trans, res_reshape
+
+                if not total:
+                    result *= oversample**2.
+            elif total: 
+                result /= oversample**2.
+
+            return dtype_check(result, input_dtype)
+            
+    elif ndim==3:
+        kwargs = {
+            'order': order, 
+            'mode': mode, 
+            'total': total, 
+            'rescale_pix': rescale_pix,
+        }
+        result = np.array([zrebin(im, oversample, **kwargs) for im in image])
+        return result        
+
 def frebin(image, dimensions=None, scale=None, total=True):
     """Fractional rebin
     
@@ -1089,7 +1477,7 @@ def frebin(image, dimensions=None, scale=None, total=True):
         If total is True, then prints a warning, otherwise 
         changes back to input dtype.
         """
-        # Because we're preserving total, may be unable to preserver input dtype
+        # Because we're preserving total, may be unable to preserve input dtype
         if result.dtype != input_dtype:
             if total:
                 _log.warning(f'dtype was updated from {input_dtype} to {result.dtype}')
@@ -1295,8 +1683,6 @@ def image_rescale(HDUlist_or_filename, pixscale_out, pixscale_in=None,
     =======
         HDUlist of the new image.
     """
-
-    from .imreg_tools import crop_image
 
     if isinstance(HDUlist_or_filename, six.string_types):
         hdulist = fits.open(HDUlist_or_filename)
