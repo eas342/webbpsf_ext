@@ -99,6 +99,8 @@ class Bandpass(synphot.SpectralElement):
         internal units.
     """
 
+    _area = stsyn.conf.area
+
     def __init__(self, modelclass, waveunits='angstrom', name=None, **kwargs):
 
         # Initialize parent class
@@ -157,8 +159,7 @@ class Bandpass(synphot.SpectralElement):
         return dw.to(self._internal_wave_unit)
     
     def unit_response(self, area=None, wavelengths=None):
-        if area is None:
-            area = stsyn.conf.area
+        area = self._area if area is None else area
         return super().unit_response(area, wavelengths=wavelengths)
     
     def resample(self, new_wave):
@@ -404,6 +405,8 @@ class Spectrum(synphot.SourceSpectrum):
         Keyword arguments passed to the parent class.
     """
 
+    _area = stsyn.conf.area
+
     def __init__(self, modelclass, waveunits='angstrom', fluxunits='photlam', name=None, **kwargs):
 
         # Initialize parent class
@@ -469,7 +472,7 @@ class Spectrum(synphot.SourceSpectrum):
         except SynphotError:
             self._fluxunits = validate_unit(new_units)
 
-    def renorm(self, RNval, RNUnits, band, force=False):
+    def renorm(self, RNval, RNUnits, band, force=False, area=None):
         """Renormalize the spectrum to the specified value, unit, and bandpass.
 
         This wraps `normalize` attribute for convenience using the telescope
@@ -496,7 +499,8 @@ class Spectrum(synphot.SourceSpectrum):
             RNval = RNval * RNUnits
 
         # Renormalize
-        return self.normalize(RNval, band, area=stsyn.conf.area, 
+        area = self._area if area is None else area
+        return self.normalize(RNval, band, area=area, 
                               vegaspec=stsyn.Vega, force=force)
 
 
@@ -701,7 +705,7 @@ class Observation(synphot.Observation):
 
     area = stsyn.conf.area
 
-    def __call__(self, wavelengths, flux_unit=None):
+    def __call__(self, wavelengths, flux_unit=None, area=None, **kwargs):
         """Sample the spectrum.
 
         Parameters
@@ -724,7 +728,10 @@ class Observation(synphot.Observation):
             Might have negative values.
 
         """
-        kwargs = {'flux_unit': flux_unit, 'area': self.area, 'vegaspec': stsyn.Vega}
+
+        kwargs['flux_unit'] = flux_unit
+        kwargs['area'] = self.area if area is None else area
+        kwargs['vegaspec'] = kwargs.get('vegaspec', stsyn.Vega)
         return super().__call__(wavelengths, **kwargs)
 
 
