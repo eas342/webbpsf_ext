@@ -205,6 +205,7 @@ am*.fits
 spec_cf*.txt
 spec_hy*.txt
 model*.npy
+bosz2024*.txt*
 
 # Dask files
 dask-worker-space
