@@ -51,6 +51,104 @@ def BOSZ_filename(Teff, metallicity, log_g, res, carbon=0, alpha=0):
 
     return fname
 
+def BOSZ_filename_2024(Teff, log_g, metallicity, res, alpha=0, carbon=0, 
+                       micro_vel=2, prod=None, **kwargs):
+    """ Generate filename for BOSZ 2024 spectrum
+    
+    MARCS ("ms" or "mp"):
+
+        * Teff from 2800 to 4000, in steps of 100; log(g) -0.5 to 5.5, in steps of 0.5
+        * Teff from 4250 to 4750, in steps of 250; log(g) -0.5 to 5.0, in steps of 0.5
+        * Teff from 5000 to 5750, in steps of 250; log(g) 0.0 to 5.5, in steps of 0.5
+        * Teff from 6000 to 7000, in steps of 250; log(g) 1.0 to 5.5, in steps of 0.5
+        * Teff from 7250 to 8000, in steps of 250; log(g) 2.0 to 5.5, in steps of 0.5
+
+    ATLAS9 ("ap"):
+
+        * Teff from 7500 to 12000, in steps of 250; log(g) 2.0 to 5.0, in steps of 0.5
+        * Teff from 12500 to 16000, in steps of 500; log(g) 3.0 to 5.0, in steps of 0.5
+
+    Parameters
+    ----------
+    Teff : float
+        Effective temperature ranging from 2800K to 16000K.
+    log_g : float
+        Surface gravity (log g) from -0.5 to 5.5.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.50 to +0.75, 
+        in steps of 0.25
+    res : str
+        Spectral resolution: 500, 1000, 2000, 5000, 10000, 20000, 50000, or 'orig'. 
+
+    Keyword Args
+    ------------
+    alpha : float
+        alpha-element value [alpha/M]. Must be either [-0.25, 0, 0.25, 0.5]
+    carbon : float
+        Carbon abundance [C/M]. Must be either [-0.75,-0.5,-0.25, 0, 0.25, 0.5].
+    micro_vel : float
+        microturbulence velocity, either 0, 1, 2, or 4 km/s
+    prod : str
+        Product type is either None, 'wave', or 'lineid'. 
+        If None, the default is either 'resam' or 'noresamp' if res='orig'. 
+        If 'wave', the product is the wavelength file 'bosz2024_wave_r{res}.txt'.
+        If 'lineid', the product is the line identification file, only valid
+        for res='orig'.
+    """
+
+    # Effective Temperature
+    teff_str = f't{Teff:04.0f}'
+
+    # Surface gravity
+    logg_str = f'g{log_g:+02.1f}'
+
+    # In the MARCS model atmospheres, spherical geometry is used between 
+    # logg=−1 and 3 with vmicro=2 kms−1; and plane-parallel geometry is 
+    # assumed between logg= 3.5 and 5.5 dex with vmicro=1 kms−1.
+    # All ATLAS9 models are plane-parallel model atmospheres with vmicro=2 kms−1.
+    is_marcs = Teff <= 8000
+    if is_marcs:
+        atmo_str = 'ms' if log_g < 3.5 else 'mp'
+    else:
+        atmo_str = 'ap'
+
+    # Metallicity [M/H]
+    metal_str = f'm{metallicity:+03.2f}'
+
+    # alpha-element value [alpha/M]
+    alpha_str = f'a{alpha:+03.2f}'
+
+    # Carbon abundance [C/M]
+    carb_str = f'c{carbon:+03.2f}'
+
+    # Microturbulence
+    micro_str = f'v{micro_vel:01.0f}'
+
+    # Resolution
+    # res can also equal 'orig' for the original resolution
+    rstr = f'r{res}'
+
+    # Product type is either 'resam' or 'noresam'
+    if prod is None:
+        prod_str = 'noresam' if res == 'orig' else 'resam'
+    elif prod=='lineid' and res=='orig':
+        prod_str = 'lineid'
+    elif prod=='lineid':
+        raise ValueError('Product type "lineid" is only valid for res="orig".')
+    elif (prod == 'wave') and (res != 'orig'):
+        return f'bosz2024_wave_r{res}.txt'
+    elif (prod == 'wave'):
+        raise ValueError('Product type "wave" is not valid for res="orig".')
+    else:
+        raise ValueError(f'Invalid product type: {prod}')
+
+    # Final file name
+    # bosz2024_mp_t5000_g+5.0_m+0.00_a+0.00_c+0.00_v0_r500_resam.txt.gz
+    # bosz2024_<atmos>_<teff>_<logg>_<metal>_<alpha>_<carbon>_<micro>_<insbroad>_<prod>.txt.gz
+    fname = f'bosz2024_{atmo_str}_{teff_str}_{logg_str}_{metal_str}_{alpha_str}_{carb_str}_{micro_str}_{rstr}_{prod_str}.txt.gz'
+
+    return fname
+
 def download_BOSZ_spectrum(Teff, metallicity, log_g, res, carbon=0, alpha=0,
                            outdir=None):
 
@@ -74,6 +172,51 @@ def download_BOSZ_spectrum(Teff, metallicity, log_g, res, carbon=0, alpha=0,
 
     # Generate file name
     fname = BOSZ_filename(Teff, metallicity, log_g, res, carbon=carbon, alpha=alpha)
+
+    # Final URL
+    url_final = os.path.join(url_dir, fname)
+
+    # Make request
+    _log.info(f'Downloading file: {fname}')
+    req = requests.get(url_final, allow_redirects=True)
+
+    # Raise exception if file not found or other HTTP error
+    if req.status_code != requests.codes.ok:
+        req.raise_for_status()
+
+    # Save file to directory
+    outpath = os.path.join(outdir, fname)
+    _log.info(f'Saving file to: {outpath}')
+    open(outpath, 'wb').write(req.content)
+
+
+def download_BOSZ_2024(Teff, log_g, metallicity, res, outdir=None, **kwargs):
+
+    import requests
+
+    if outdir is None:
+        res_dir = os.path.join(_spec_dir, 'bosz2024_grids', 'R{}'.format(res))
+
+        # Create resolution directory if it doesn't exists
+        if not os.path.isdir(res_dir):
+            os.makedirs(res_dir)
+        outdir = res_dir
+
+    # Check for product keyword of type is
+
+    is_wave = kwargs.get('prod', 'none') == 'wave'
+    
+    # Generate URL directory that file is saved in
+    url_base = 'https://archive.stsci.edu/hlsps/bosz/bosz2024/'
+    res_str = f'r{res}'
+    metal_str = f'm{metallicity:+03.2f}'
+    if is_wave:
+        url_dir = os.path.join(url_base, 'wavelength_grids')
+    else:
+        url_dir = os.path.join(url_base, res_str, metal_str)
+
+    # Generate file name
+    fname = BOSZ_filename_2024(Teff, log_g, metallicity, res, **kwargs)
 
     # Final URL
     url_final = os.path.join(url_dir, fname)
@@ -269,6 +412,199 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True,
     sp.convert(fluxout)
     return sp
 
+def BOSZ_2024_spectrum(Teff, log_g, metallicity, res=2000, 
+                       interpolate=True, fluxout='photlam', **kwargs):
+    """BOSZ stellar atmospheres (Bohlin et al 2017).
+
+    Read in a spectrum from the BOSZ stellar atmosphere models database.
+    Returns a synphot spectral object. Wavelength values range between
+    1000 Angstroms to 32 microns. Teff range from 3500K to 36000K.
+
+    This function interpolates the model grid by reading in those models
+    closest in temperature, metallicity, and log g to the desired parameters,
+    then takes the weighted average of these models based on their relative
+    offsets. Can also just read in the closest model by setting interpolate=False.
+
+    Different spectral resolutions can also be specified.
+
+    Parameters
+    ----------
+    Teff : float
+        Effective temperature ranging from 3500K to 30000K.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.5 to 0.5.
+    log_g : float
+        Surface gravity (log g) from 0 to 5.
+
+    Keyword Args
+    ------------
+    carbon : float
+        Carbon abundance [C/M]. Must be either [-0.75,-0.5,-0.25, 0, 0.25, 0.5].
+    alpha : float
+        alpha-element value [alpha/H]. Must be either [-0.25, 0, 0.25, 0.5]
+    res : str
+        Spectral resolution to use (instrument broadening). Valid points:
+        [200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 300000]
+    interpolate : bool
+        Interpolate spectrum using a weighted average of grid points
+        surrounding the desired input parameters.
+
+
+    References
+    ----------
+    https://archive.stsci.edu/prepds/bosz/
+    """
+
+    model_dir = os.path.join(_spec_dir, 'bosz2024_grids/')
+    res_dir = os.path.join(model_dir, f'R{res:.0f}/')
+
+    if not os.path.isdir(model_dir):
+        raise IOError(f'BOSZ model directory does not exist: {model_dir}')
+    if not os.path.isdir(res_dir):
+        os.makedirs(res_dir)
+        # raise IOError('Resolution directory does not exist: {}'.format(res_dir))
+
+    # Grid of computed temperature steps
+    teff_grid = list(range(2800,4000,100)) \
+                + list(range(4000,12000,250)) \
+                + list(range(12000,16500,500))
+    teff_grid = np.array(teff_grid)
+
+    # Grid of log g steps for desired Teff
+    lg_step = 0.5
+    if   Teff <=  4000: lg_min, lg_max = (-0.5, 5.5)
+    elif Teff <=  4650: lg_min, lg_max = (-0.5, 5.0)
+    elif Teff <=  5750: lg_min, lg_max = ( 0.0, 5.5)
+    elif Teff <=  7000: lg_min, lg_max = ( 1.0, 5.5)
+    elif Teff <=  8000: lg_min, lg_max = ( 2.0, 5.5)
+    elif Teff <= 12000: lg_min, lg_max = ( 2.0, 5.0)
+    elif Teff <= 16000: lg_min, lg_max = ( 3.0, 5.0)    
+    else: raise ValueError('Teff must be less than or equal to 16000K.')
+    if log_g<lg_min:
+        raise ValueError(f'log_g must be >= {lg_min:+.1f}')
+    if log_g>lg_max:
+        raise ValueError(f'log_g must be <= {lg_max:+.1f}')
+
+    # Grid of log g values
+    logg_grid = np.arange(lg_min, lg_max+lg_step, lg_step)
+
+    # Grid of metallicity values
+    metal_grid = np.arange(-2.5,0.75,0.25)
+
+    # First, choose the two grid points closest in Teff
+    teff_diff = np.abs(teff_grid - Teff)
+    ind_sort = np.argsort(teff_diff)
+    if teff_diff[ind_sort[0]]==0: # Exact
+        teff_best = np.array([teff_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        teff_best = teff_grid[ind_sort[0:2]]
+
+    # Choose the two best log g values
+    logg_diff = np.abs(logg_grid - log_g)
+    ind_sort = np.argsort(logg_diff)
+    if logg_diff[ind_sort[0]]==0: # Exact
+        logg_best = np.array([logg_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        logg_best = logg_grid[ind_sort[0:2]]
+
+    # Choose the two best metallicity values
+    metal_diff = np.abs(metal_grid - metallicity)
+    ind_sort = np.argsort(metal_diff)
+    if metal_diff[ind_sort[0]]==0: # Exact
+        metal_best = np.array([metal_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        metal_best = metal_grid[ind_sort[0:2]]
+
+    # Get wavelength file
+    if res != 'orig':
+        fname_wave = BOSZ_filename_2024(Teff, log_g, metallicity, res, prod='wave')
+        fpath_wave = os.path.join(res_dir, fname_wave)
+        if not os.path.isfile(fpath_wave):
+            download_BOSZ_2024(Teff, log_g, metallicity, res, prod='wave', outdir=res_dir)
+        tbl_wave = ascii.read(fpath_wave, names=['Wavelength'], format='basic')
+
+        colnames = ['SpecificIntensity', 'Continuum']
+    else:
+        colnames = ['Wavelength', 'SpecificIntensity', 'Continuum']
+
+    # Build final file names
+    fnames = []
+    # Build lists of properties to pass to download function if needed
+    teff_all = []
+    logg_all = []
+    metal_all = []
+    for t in teff_best:
+        for l in logg_best:
+            for m in metal_best:
+                fname = BOSZ_filename_2024(t, l, m, res, **kwargs)
+                fnames.append(fname)
+                teff_all.append(t)
+                logg_all.append(l)
+                metal_all.append(m)
+    teff_all = np.array(teff_all)
+    logg_all = np.array(logg_all)
+    metal_all = np.array(metal_all)
+
+    # Weight by relative distance from desired value
+    weights = []
+    teff_diff = np.abs(teff_best - Teff)
+    logg_diff = np.abs(logg_best - log_g)
+    metal_diff = np.abs(metal_best - metallicity)
+    for t in teff_diff:
+        wt = 1 if len(teff_diff)==1 else t / np.sum(teff_diff)
+        for l in logg_diff:
+            wl = 1 if len(logg_diff)==1 else l / np.sum(logg_diff)
+            for m in metal_diff:
+                wm = 1 if len(metal_diff)==1 else m / np.sum(metal_diff)
+                weights.append(wt*wl*wm)
+    weights = np.array(weights)
+    weights = weights / np.sum(weights)
+
+    if interpolate:
+        wave_all = []
+        flux_all = []
+        for i, f in enumerate(fnames):
+            # Download files that don't currently exist
+            fpath = os.path.join(res_dir, f)
+            if not os.path.isfile(fpath):
+                download_BOSZ_2024(teff_all[i], logg_all[i], metal_all[i], res, 
+                                   outdir=res_dir, **kwargs)
+
+            tbl = ascii.read(fpath, names=colnames, format='basic')
+            if res == 'orig':
+                wave_all.append(tbl['Wavelength'])
+            flux_all.append(tbl['SpecificIntensity'] * weights[i])
+
+        wfin = wave_all[0] if len(wave_all)>0 else tbl_wave['Wavelength']
+        ffin = 4 * np.pi * np.array(flux_all).sum(axis=0) # erg/s/cm^2/A
+    else:
+        ind = np.where(weights==weights.max())[0][0]
+        f = fnames[ind]
+        Teff = teff_all[ind]
+        log_g = logg_all[ind]
+        metallicity = metal_all[ind]
+
+        # Download files if doesn't exist
+        fpath = os.path.join(res_dir, f)
+        if not os.path.isfile(fpath):
+            download_BOSZ_2024(Teff, log_g, metallicity, res, outdir=res_dir, **kwargs)
+        
+        tbl = ascii.read(fpath, names=colnames, format='basic')
+        wfin = tbl['Wavelength'] if res == 'orig' else tbl_wave['Wavelength']
+        ffin = 4 * np.pi * tbl['SpecificIntensity'] # erg/s/cm^2/A
+
+        # d = fits.getdata(fpath, 1)
+        # wfin = d['Wavelength']
+        # ffin = np.pi * d['SpecificIntensity'] # erg/s/cm^2/A
+
+
+    name = 'BOSZ(Teff={},z={},logG={})'.format(Teff, metallicity, log_g)
+    sp = s_ext.ArraySpectrum(wave=wfin[:-1], flux=ffin[:-1], 
+                             waveunits='angstrom', fluxunits='flam', name=name)
+
+    sp.convert(fluxout)
+    return sp
+
 
 #  TABLE 2: Suggested models for specific stellar types
 #      Type    T_{eff}    log_g       Kurucz model
@@ -378,14 +714,24 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         Default: True
     """
 
-    def call_bosz(v0,v1,v2,**kwargs):
-        if v0 > 35000:
-            v0 = 35000
-            _log.warning("BOSZ models stop at 35000K. Setting Teff=35000.")
-        if v0 < 3500:
-            v0 = 3500
-            _log.warning("BOSZ models start at 3500K. Setting Teff=3500.")
-        return BOSZ_spectrum(v0, v1, v2, **kwargs)
+    def call_bosz(v0, v1, v2, use_2024=True, **kwargs):
+
+        if v0 > 16000 and use_2024:
+            use_2024=False
+
+        if use_2024:
+            if v0 < 2800:
+                v0 = 2800
+                _log.warning("BOSZ models start at 2800K. Setting Teff=2800.")
+            return BOSZ_2024_spectrum(v0, v2, v1, **kwargs)
+        else:
+            if v0 > 35000:
+                v0 = 35000
+                _log.warning("BOSZ models stop at 35000K. Setting Teff=35000.")
+            if v0 < 3500:
+                v0 = 3500
+                _log.warning("BOSZ models start at 3500K. Setting Teff=3500.")
+            return BOSZ_spectrum(v0, v1, v2, **kwargs)
 
 
     Teff = kwargs.pop('Teff', None)
@@ -2266,8 +2612,9 @@ def bin_spectrum(sp, wave, waveunits='um'):
     # We also want input to be in terms of counts to conserve flux
     sp.convert('photlam')
 
-    edges = calculate_bin_edges(wave * u.um)
-    ind = (sp.wave >= edges[0]) & (sp.wave <= edges[-1])
+    # Calculate bin edges
+    edges = calculate_bin_edges(wave * sp.waveunits)
+    ind = (sp.waveset >= edges[0]) & (sp.waveset <= edges[-1])
     binflux = binned_statistic(sp.wave[ind], sp.flux[ind], np.mean, bins=edges)
 
     # Interpolate over NaNs
