@@ -84,8 +84,7 @@ def miri_filter(filter, **kwargs):
     hdulist.close()
 
     # Select which wavelengths to keep
-    bp_max = bp.throughput.max()
-    igood = bp_igood(bp, min_trans=0.001*bp_max, fext=0.1)
+    igood = bp_igood(bp, min_trans=0.001, fext=0.1)
     wgood = (bp.wave)[igood]
     w1 = wgood.min()
     w2 = wgood.max()
@@ -323,7 +322,7 @@ def nircam_grism_th(module, grism_order=1, wave_out=None, return_bp=False):
         bp = S.ArrayBandpass(wave=1e4*wave_out, throughput=trans)
         return bp
     elif return_wave:
-        return wdata, trans
+        return wave_out, trans
     else:
         return trans
 
@@ -719,8 +718,7 @@ def nircam_filter(filter, pupil=None, mask=None, module=None, sca=None, ND_acq=F
         bp = S.ArrayBandpass(bp.wave, th_new, name=bp.name)
 
     # Select which wavelengths to keep
-    bp_max = bp.throughput.max()
-    igood = bp_igood(bp, min_trans=0.005*bp_max, fext=0.1)
+    igood = bp_igood(bp, min_trans=0.005, fext=0.1)
     wgood = (bp.wave)[igood]
     w1 = wgood.min()
     w2 = wgood.max()
@@ -855,8 +853,7 @@ def nircam_filter(filter, pupil=None, mask=None, module=None, sca=None, ND_acq=F
             bp_name = f"{bp_name}_WLP12"
 
     # Select which wavelengths to keep
-    bp_max = bp.throughput.max()
-    igood = bp_igood(bp, min_trans=0.005*bp_max, fext=0.1)
+    igood = bp_igood(bp, min_trans=0.005, fext=0.1)
     wgood = (bp.wave)[igood]
     w1 = wgood.min()
     w2 = wgood.max()
