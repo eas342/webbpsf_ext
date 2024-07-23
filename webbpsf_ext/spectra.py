@@ -51,104 +51,6 @@ def BOSZ_filename(Teff, metallicity, log_g, res, carbon=0, alpha=0):
 
     return fname
 
-def BOSZ_filename_2024(Teff, log_g, metallicity, res, alpha=0, carbon=0, 
-                       micro_vel=2, prod=None, **kwargs):
-    """ Generate filename for BOSZ 2024 spectrum
-    
-    MARCS ("ms" or "mp"):
-
-        * Teff from 2800 to 4000, in steps of 100; log(g) -0.5 to 5.5, in steps of 0.5
-        * Teff from 4250 to 4750, in steps of 250; log(g) -0.5 to 5.0, in steps of 0.5
-        * Teff from 5000 to 5750, in steps of 250; log(g) 0.0 to 5.5, in steps of 0.5
-        * Teff from 6000 to 7000, in steps of 250; log(g) 1.0 to 5.5, in steps of 0.5
-        * Teff from 7250 to 8000, in steps of 250; log(g) 2.0 to 5.5, in steps of 0.5
-
-    ATLAS9 ("ap"):
-
-        * Teff from 7500 to 12000, in steps of 250; log(g) 2.0 to 5.0, in steps of 0.5
-        * Teff from 12500 to 16000, in steps of 500; log(g) 3.0 to 5.0, in steps of 0.5
-
-    Parameters
-    ----------
-    Teff : float
-        Effective temperature ranging from 2800K to 16000K.
-    log_g : float
-        Surface gravity (log g) from -0.5 to 5.5.
-    metallicity : float
-        Metallicity [Fe/H] value ranging from -2.50 to +0.75, 
-        in steps of 0.25
-    res : str
-        Spectral resolution: 500, 1000, 2000, 5000, 10000, 20000, 50000, or 'orig'. 
-
-    Keyword Args
-    ------------
-    alpha : float
-        alpha-element value [alpha/M]. Must be either [-0.25, 0, 0.25, 0.5]
-    carbon : float
-        Carbon abundance [C/M]. Must be either [-0.75,-0.5,-0.25, 0, 0.25, 0.5].
-    micro_vel : float
-        microturbulence velocity, either 0, 1, 2, or 4 km/s
-    prod : str
-        Product type is either None, 'wave', or 'lineid'. 
-        If None, the default is either 'resam' or 'noresamp' if res='orig'. 
-        If 'wave', the product is the wavelength file 'bosz2024_wave_r{res}.txt'.
-        If 'lineid', the product is the line identification file, only valid
-        for res='orig'.
-    """
-
-    # Effective Temperature
-    teff_str = f't{Teff:04.0f}'
-
-    # Surface gravity
-    logg_str = f'g{log_g:+02.1f}'
-
-    # In the MARCS model atmospheres, spherical geometry is used between 
-    # logg=−1 and 3 with vmicro=2 kms−1; and plane-parallel geometry is 
-    # assumed between logg= 3.5 and 5.5 dex with vmicro=1 kms−1.
-    # All ATLAS9 models are plane-parallel model atmospheres with vmicro=2 kms−1.
-    is_marcs = Teff <= 8000
-    if is_marcs:
-        atmo_str = 'ms' if log_g < 3.5 else 'mp'
-    else:
-        atmo_str = 'ap'
-
-    # Metallicity [M/H]
-    metal_str = f'm{metallicity:+03.2f}'
-
-    # alpha-element value [alpha/M]
-    alpha_str = f'a{alpha:+03.2f}'
-
-    # Carbon abundance [C/M]
-    carb_str = f'c{carbon:+03.2f}'
-
-    # Microturbulence
-    micro_str = f'v{micro_vel:01.0f}'
-
-    # Resolution
-    # res can also equal 'orig' for the original resolution
-    rstr = f'r{res}'
-
-    # Product type is either 'resam' or 'noresam'
-    if prod is None:
-        prod_str = 'noresam' if res == 'orig' else 'resam'
-    elif prod=='lineid' and res=='orig':
-        prod_str = 'lineid'
-    elif prod=='lineid':
-        raise ValueError('Product type "lineid" is only valid for res="orig".')
-    elif (prod == 'wave') and (res != 'orig'):
-        return f'bosz2024_wave_r{res}.txt'
-    elif (prod == 'wave'):
-        raise ValueError('Product type "wave" is not valid for res="orig".')
-    else:
-        raise ValueError(f'Invalid product type: {prod}')
-
-    # Final file name
-    # bosz2024_mp_t5000_g+5.0_m+0.00_a+0.00_c+0.00_v0_r500_resam.txt.gz
-    # bosz2024_<atmos>_<teff>_<logg>_<metal>_<alpha>_<carbon>_<micro>_<insbroad>_<prod>.txt.gz
-    fname = f'bosz2024_{atmo_str}_{teff_str}_{logg_str}_{metal_str}_{alpha_str}_{carb_str}_{micro_str}_{rstr}_{prod_str}.txt.gz'
-
-    return fname
-
 def download_BOSZ_spectrum(Teff, metallicity, log_g, res, carbon=0, alpha=0,
                            outdir=None):
 
@@ -172,51 +74,6 @@ def download_BOSZ_spectrum(Teff, metallicity, log_g, res, carbon=0, alpha=0,
 
     # Generate file name
     fname = BOSZ_filename(Teff, metallicity, log_g, res, carbon=carbon, alpha=alpha)
-
-    # Final URL
-    url_final = os.path.join(url_dir, fname)
-
-    # Make request
-    _log.info(f'Downloading file: {fname}')
-    req = requests.get(url_final, allow_redirects=True)
-
-    # Raise exception if file not found or other HTTP error
-    if req.status_code != requests.codes.ok:
-        req.raise_for_status()
-
-    # Save file to directory
-    outpath = os.path.join(outdir, fname)
-    _log.info(f'Saving file to: {outpath}')
-    open(outpath, 'wb').write(req.content)
-
-
-def download_BOSZ_2024(Teff, log_g, metallicity, res, outdir=None, **kwargs):
-
-    import requests
-
-    if outdir is None:
-        res_dir = os.path.join(_spec_dir, 'bosz2024_grids', 'R{}'.format(res))
-
-        # Create resolution directory if it doesn't exists
-        if not os.path.isdir(res_dir):
-            os.makedirs(res_dir)
-        outdir = res_dir
-
-    # Check for product keyword of type is
-
-    is_wave = kwargs.get('prod', 'none') == 'wave'
-    
-    # Generate URL directory that file is saved in
-    url_base = 'https://archive.stsci.edu/hlsps/bosz/bosz2024/'
-    res_str = f'r{res}'
-    metal_str = f'm{metallicity:+03.2f}'
-    if is_wave:
-        url_dir = os.path.join(url_base, 'wavelength_grids')
-    else:
-        url_dir = os.path.join(url_base, res_str, metal_str)
-
-    # Generate file name
-    fname = BOSZ_filename_2024(Teff, log_g, metallicity, res, **kwargs)
 
     # Final URL
     url_final = os.path.join(url_dir, fname)
@@ -412,9 +269,152 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True,
     sp.convert(fluxout)
     return sp
 
+def BOSZ_filename_2024(Teff, log_g, metallicity, res, alpha=0, carbon=0, 
+                       micro_vel=2, prod=None, **kwargs):
+    """ Generate filename for BOSZ 2024 spectrum
+    
+    MARCS ("ms" or "mp"):
+
+        * Teff from 2800 to 4000, in steps of 100; log(g) -0.5 to 5.5, in steps of 0.5
+        * Teff from 4250 to 4750, in steps of 250; log(g) -0.5 to 5.0, in steps of 0.5
+        * Teff from 5000 to 5750, in steps of 250; log(g) 0.0 to 5.5, in steps of 0.5
+        * Teff from 6000 to 7000, in steps of 250; log(g) 1.0 to 5.5, in steps of 0.5
+        * Teff from 7250 to 8000, in steps of 250; log(g) 2.0 to 5.5, in steps of 0.5
+
+    ATLAS9 ("ap"):
+
+        * Teff from 7500 to 12000, in steps of 250; log(g) 2.0 to 5.0, in steps of 0.5
+        * Teff from 12500 to 16000, in steps of 500; log(g) 3.0 to 5.0, in steps of 0.5
+
+    Parameters
+    ----------
+    Teff : float
+        Effective temperature ranging from 2800K to 16000K.
+    log_g : float
+        Surface gravity (log g) from -0.5 to 5.5.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.50 to +0.75, 
+        in steps of 0.25
+    res : str
+        Spectral resolution: 500, 1000, 2000, 5000, 10000, 20000, 50000, or 'orig'. 
+
+    Keyword Args
+    ------------
+    alpha : float
+        alpha-element value [alpha/M]. Must be either [-0.25, 0, 0.25, 0.5]
+    carbon : float
+        Carbon abundance [C/M]. Must be either [-0.75,-0.5,-0.25, 0, 0.25, 0.5].
+    micro_vel : float
+        microturbulence velocity, either 0, 1, 2, or 4 km/s
+    prod : str
+        Product type is either None, 'wave', or 'lineid'. 
+        If None, the default is either 'resam' or 'noresamp' if res='orig'. 
+        If 'wave', the product is the wavelength file 'bosz2024_wave_r{res}.txt'.
+        If 'lineid', the product is the line identification file, only valid
+        for res='orig'.
+    """
+
+    # Effective Temperature
+    teff_str = f't{Teff:04.0f}'
+
+    # Surface gravity
+    logg_str = f'g{log_g:+02.1f}'
+
+    # In the MARCS model atmospheres, spherical geometry is used between 
+    # logg=−1 and 3 with vmicro=2 kms−1; and plane-parallel geometry is 
+    # assumed between logg= 3.5 and 5.5 dex with vmicro=1 kms−1.
+    # All ATLAS9 models are plane-parallel model atmospheres with vmicro=2 kms−1.
+    is_marcs = Teff <= 8000
+    if is_marcs:
+        atmo_str = 'ms' if log_g < 3.5 else 'mp'
+    else:
+        atmo_str = 'ap'
+
+    # Metallicity [M/H]
+    metal_str = f'm{metallicity:+03.2f}'
+
+    # alpha-element value [alpha/M]
+    alpha_str = f'a{alpha:+03.2f}'
+
+    # Carbon abundance [C/M]
+    carb_str = f'c{carbon:+03.2f}'
+
+    # Microturbulence
+    micro_str = f'v{micro_vel:01.0f}'
+
+    # Resolution
+    # res can also equal 'orig' for the original resolution
+    rstr = f'r{res}'
+
+    # Product type is either 'resam' or 'noresam'
+    if prod is None:
+        prod_str = 'noresam' if res == 'orig' else 'resam'
+    elif prod=='lineid' and res=='orig':
+        prod_str = 'lineid'
+    elif prod=='lineid':
+        raise ValueError('Product type "lineid" is only valid for res="orig".')
+    elif (prod == 'wave') and (res != 'orig'):
+        return f'bosz2024_wave_r{res}.txt'
+    elif (prod == 'wave'):
+        raise ValueError('Product type "wave" is not valid for res="orig".')
+    else:
+        raise ValueError(f'Invalid product type: {prod}')
+
+    # Final file name
+    # bosz2024_mp_t5000_g+5.0_m+0.00_a+0.00_c+0.00_v0_r500_resam.txt.gz
+    # bosz2024_<atmos>_<teff>_<logg>_<metal>_<alpha>_<carbon>_<micro>_<insbroad>_<prod>.txt.gz
+    fname = f'bosz2024_{atmo_str}_{teff_str}_{logg_str}_{metal_str}_{alpha_str}_{carb_str}_{micro_str}_{rstr}_{prod_str}.txt.gz'
+
+    return fname
+
+def download_BOSZ_2024(Teff, log_g, metallicity, res, outdir=None, **kwargs):
+
+    import requests
+
+    if outdir is None:
+        res_dir = os.path.join(_spec_dir, 'bosz2024_grids', 'R{}'.format(res))
+
+        # Create resolution directory if it doesn't exists
+        if not os.path.isdir(res_dir):
+            os.makedirs(res_dir)
+        outdir = res_dir
+
+    # Check for product keyword of type is
+
+    is_wave = kwargs.get('prod', 'none') == 'wave'
+    
+    # Generate URL directory that file is saved in
+    url_base = 'https://archive.stsci.edu/hlsps/bosz/bosz2024/'
+    res_str = f'r{res}'
+    metal_str = f'm{metallicity:+03.2f}'
+    if is_wave:
+        url_dir = os.path.join(url_base, 'wavelength_grids')
+    else:
+        url_dir = os.path.join(url_base, res_str, metal_str)
+
+    # Generate file name
+    fname = BOSZ_filename_2024(Teff, log_g, metallicity, res, **kwargs)
+
+    # Final URL
+    url_final = os.path.join(url_dir, fname)
+
+    # Make request
+    _log.info(f'Downloading file: {fname}')
+    req = requests.get(url_final, allow_redirects=True)
+
+    # Raise exception if file not found or other HTTP error
+    if req.status_code != requests.codes.ok:
+        req.raise_for_status()
+
+    # Save file to directory
+    outpath = os.path.join(outdir, fname)
+    _log.info(f'Saving file to: {outpath}')
+    open(outpath, 'wb').write(req.content)
+
+
 def BOSZ_2024_spectrum(Teff, log_g, metallicity, res=2000, 
                        interpolate=True, fluxout='photlam', **kwargs):
-    """BOSZ stellar atmospheres (Bohlin et al 2017).
+    """BOSZ stellar atmospheres (Mészáros et al. 2024).
 
     Read in a spectrum from the BOSZ stellar atmosphere models database.
     Returns a synphot spectral object. Wavelength values range between
@@ -998,7 +998,7 @@ class source_spectrum(object):
         self.sp0 = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
 
         # Read in a low res version for photometry matching
-        kwargs['res'] = 200
+        kwargs['res'] = 200 if not kwargs.get('use_2024', True) else 500
         self.sp_lowres = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
 
         if Av is not None:
