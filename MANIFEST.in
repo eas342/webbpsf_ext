@@ -9,6 +9,7 @@ recursive-include docs *.rst conf.py Makefile make.bat *.jpg *.png *.gif
 recursive-exclude * *.py[co]
 global-exclude .DS_Store
 
+global-exclude bosz2024*.txt.gz
 global-exclude *.tar.gz
 global-exclude spec*.txt
 global-exclude am*.fits
