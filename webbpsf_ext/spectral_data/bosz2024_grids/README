@@ -1,0 +1,13 @@
+BOSZ stellar atmospheres (Mészáros et al. 2024).
+https://archive.stsci.edu/prepds/bosz/
+
+Wavelength values range between 50 nm to 32 microns.
+Teff range from 2800K to 16000K.
+metallicty from -2.5 to +0.75 in 0.25 increments
+logg from -0.0 to 5.5 in 0.5 increments.
+
+Different spectral resolutions (instrument broadening) can also be specified.
+Valid res: [500, 1000, 2000, 5000, 10000, 20000, 50000, original]
+
+The `BOSZ_2024_spectrum` and `download_BOSZ_2024` in `spectra.py` will automatically
+download and populate directories with missing files.
