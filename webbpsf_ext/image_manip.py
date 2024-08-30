@@ -15,7 +15,6 @@ except ImportError:
     OPENCV_EXISTS = False
 
 from astropy.convolution import Gaussian2DKernel
-from astropy.convolution import convolve, convolve_fft
 from astropy.io import fits
 
 from poppy.utils import krebin
@@ -189,13 +188,13 @@ def fshift(inarr, delx=0, dely=0, pad=False, cval=0.0, interp='linear', **kwargs
         out = np.array([fshift(im, **kwargs) for im in inarr])
 
     else:
-        raise ValueError(f'Found {ndim} dimensions {shape}. Only up to 3 dimensions allowed.')
+        raise ValueError(f'fshift: Found {ndim} dimensions {shape}. Only up to 3 dimensions allowed.')
 
     # Ensure the output isn't all NaNs
     if np.isnan(out).all():
         # Report number of NaNs in input and raise error 
         n_nan = np.sum(np.isnan(inarr))
-        raise ValueError(f'All NaNs in final shifted array. Found {n_nan} NaNs in input.')
+        raise ValueError(f'fshift: All NaNs in final shifted array. Found {n_nan} NaNs in input.')
 
     return out
 
@@ -275,14 +274,14 @@ def fourier_imshift(image, xshift, yshift, pad=False, cval=0.0,
         if np.isnan(offset).all():
             # Report number of NaNs in input and raise error 
             n_nan = np.sum(np.isnan(image))
-            raise ValueError(f'All NaNs in final shifted image. Found {n_nan} NaNs in input.')
+            raise ValueError(f'fourier_imshift: All NaNs in final shifted image. Found {n_nan} NaNs in input.')
         
     elif ndim==3:
         kwargs['pad'] = pad
         kwargs['cval'] = cval
         offset = np.array([fourier_imshift(im, xshift, yshift, **kwargs) for im in image])
     else:
-        raise ValueError(f'Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
+        raise ValueError(f'fourier_imshift: Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
     
     return offset
     
@@ -359,13 +358,13 @@ def cv_shift(image, xshift, yshift, pad=False, cval=0.0, interp='lanczos', **kwa
         if np.isnan(offset).all():
             # Report number of NaNs in input and raise error 
             n_nan = np.sum(np.isnan(image))
-            raise ValueError(f'All NaNs in final shifted image. Found {n_nan} NaNs in input.')
+            raise ValueError(f'cv_shift: All NaNs in final shifted image. Found {n_nan} NaNs in input.')
 
     elif ndim==3:
         kwargs = {'pad': pad, 'cval': cval, 'interp': interp}
         offset = np.array([cv_shift(im, xshift, yshift, **kwargs) for im in image])
     else:
-        raise ValueError(f'Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
+        raise ValueError(f'cv_shift: Found {ndim} dimensions {shape}. Only up 2 or 3 dimensions allowed.')
     
     return offset
 
@@ -393,6 +392,9 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
     oversample : int
         Factor to oversample the image before sub-pixel shifting. Default is 1.
         An oversample factor of 2 will increase the image size by 2x in each dimension.
+    order : int
+        The order of the spline interpolation for `zrebin` function, Default is 3. 
+        Only used if oversample>1. If order=0, then `frebin` is used.
     gstd_pix : float
         Standard deviation of Gaussian kernel for smoothing. Default is None.
     return_oversample : bool
@@ -433,8 +435,7 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
         For `opencv` method, valid values are 'linear', 'cubic', and 'lanczos' 
         (default: 'lanczos').
     """
-    from astropy.convolution import Gaussian2DKernel
-    from astropy.convolution import convolve
+    from astropy.convolution import Gaussian2DKernel, convolve
 
     # Replace NaNs with astropy convolved image values
     ind_nan_all = np.isnan(imarr)
@@ -459,6 +460,17 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
 
         del imarr_conv
 
+    # Apply Gaussian smoothing (before rebinning if oversample<=1)
+    if (gstd_pix is not None) and (gstd_pix>0) and (oversample<=1):
+        gstd = gstd_pix
+        kernel = Gaussian2DKernel(x_stddev=gstd)
+        if len(imarr.shape)==3:
+            imarr = np.array([image_convolution(im, kernel) for im in imarr])
+        else:
+            imarr = image_convolution(imarr, kernel)
+
+        # print('gaussian:', imarr.shape, xsh, ysh, np.nansum(imarr))
+
     # Rebin pixels
     if oversample!=1:
         rescale_pix = kwargs.pop('rescale_pix', False)
@@ -470,14 +482,18 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
         xsh = xshift
         ysh = yshift
 
-    # Apply Gaussian smoothing
-    if (gstd_pix is not None) and (gstd_pix>0):
+    # print('rebin:', imarr.shape, xsh, ysh, np.nansum(imarr))
+
+    # Apply Gaussian smoothing (after rebinning)
+    if (gstd_pix is not None) and (gstd_pix>0) and (oversample>1):
         gstd = gstd_pix * oversample
         kernel = Gaussian2DKernel(x_stddev=gstd)
         if len(imarr.shape)==3:
-            imarr = np.array([convolve(im, kernel) for im in imarr])
+            imarr = np.array([image_convolution(im, kernel) for im in imarr])
         else:
-            imarr = convolve(imarr, kernel)
+            imarr = image_convolution(imarr, kernel)
+
+        # print('gaussian:', imarr.shape, xsh, ysh, np.nansum(imarr))
 
     # Apply window function (low-pass filter)
     if (window_func is not None) and (method=='fourier'):
@@ -494,6 +510,8 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
             im_otf = np.fft.fftshift(np.fft.fft2(imarr))
             im_otf *= winfunc(window_func, im_otf.shape)
             imarr = np.fft.ifft2(np.fft.ifftshift(im_otf)).real
+
+    # print(np.sum(np.isnan(imarr)), kwargs)
 
     # Shift the image
     if method=='fourier':
@@ -514,12 +532,17 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
         # No need to resample back to original size
         return imarr_shift
     else:
-        return frebin(imarr_shift, scale=1/oversample, total=total)
+        imarr_shift = frebin(imarr_shift, scale=1/oversample, total=total)
+        # print('resample:', imarr_final.shape, np.nansum(imarr_final))
+        return imarr_shift
 
 def replace_nans_griddata(image, method='cubic', in_place=True, **kwargs):
     """Replace NaNs in an image using griddata interpolation"""
 
     from scipy.interpolate import griddata
+
+    if not np.isnan(image).any():
+        return image
 
     if not in_place:
         image = image.copy()
@@ -556,6 +579,7 @@ def replace_nans(image, mean_func=np.nanmean, in_place=False,
         2D image or 3D image cube [nz,ny,nx].
     mean_func : function
         Function to use for calculating the mean of the cube. Default is np.nanmean.
+        Set this to None if you want to skip this step and only use griddata replacement.
     use_griddata : bool
         Use griddata interpolation to fix NaNs. Default is True.
     method : str
@@ -580,6 +604,7 @@ def replace_nans(image, mean_func=np.nanmean, in_place=False,
         The value to use outside the array when using ``boundary='fill'``.
     """
 
+    from astropy.convolution import convolve, convolve_fft
     cfunc = convolve_fft if use_fft else convolve
 
     shape = image.shape
@@ -598,16 +623,19 @@ def replace_nans(image, mean_func=np.nanmean, in_place=False,
     if ind_nan_all.any():
         kernel = Gaussian2DKernel(x_stddev=x_stddev)
         if ndim==3:
-            im_mean = mean_func(image, axis=0)
+            if mean_func is not None:
+                im_mean = mean_func(image, axis=0)
             # First replace NaNs with mean of all images
             for i in range(shape[0]):
                 ind_nan_i = ind_nan_all[i]
 
                 # First replace NaNs with mean of all images
                 imfix = image[i].copy()
-                imfix[ind_nan_i] = im_mean[ind_nan_i]
+                if mean_func is not None:
+                    imfix[ind_nan_i] = im_mean[ind_nan_i]
 
-                imfix = replace_nans(imfix, mean_func=mean_func, in_place=True,
+                # Recursively call this function to replace NaNs using griddata
+                imfix = replace_nans(imfix, in_place=True,
                                      use_griddata=use_griddata, grid_method=grid_method, 
                                      x_stddev=x_stddev, use_fft=use_fft, **kwargs)
 
@@ -687,10 +715,6 @@ def image_shift_with_nans(image, xshift, yshift, shift_method='fourier', interp=
         Add NaNs back to the image after shifting. Default is False.
     return_padded : bool
         Return the padded image after shifting. Default is False.
-
-    
-    Keyword Args
-    ------------
     gstd_pix : float
         Standard deviation of Gaussian kernel for smoothing. Default is None.
     window_func : string, float, or tuple
@@ -706,6 +730,7 @@ def image_shift_with_nans(image, xshift, yshift, shift_method='fourier', interp=
                 window_func = 'hann'
                 window_func = ('tukey', 0.25) # alpha=0.25
                 window_func = ('gaussian', 5) # std dev of 5 pixels
+
     """
 
 
@@ -745,57 +770,31 @@ def image_shift_with_nans(image, xshift, yshift, shift_method='fourier', interp=
     # Store image of NaNs and transform in same was as image
     if preserve_nans:
         imnans = np.isnan(imarr).astype('float')
+        if oversample!=1:
+            imnans = frebin(imnans, scale=oversample, total=False)
+        # Shift NaN image
+        xsh = xshift * oversample
+        ysh = yshift * oversample
+        imnans = fshift(imnans, xsh, ysh, pad=pad, cval=1)
+        # Resample back to original size
+        if not (return_oversample or oversample==1):
+            imnans = frebin(imnans, scale=1/oversample, total=False)
 
     # Replace NaN with interpolated / extrapolated values
     imarr = replace_nans(imarr, in_place=False, grid_method=grid_method, **kwargs)
     # print('replace nans:', imarr.shape, np.nansum(imarr))
 
-    # Apply Gaussian smoothing
-    if (gstd_pix is not None) and (gstd_pix>0):
-        gstd = gstd_pix
-        kernel = Gaussian2DKernel(x_stddev=gstd)
-        if len(imarr.shape)==3:
-            imarr = np.array([convolve(im, kernel) for im in imarr])
-        else:
-            imarr = convolve(imarr, kernel)
-
-    # Rebin pixels
-    if oversample!=1:
-        # print(np.nansum(imarr), oversample, order, total)
-        imarr = zrebin(imarr, oversample, order=order, 
-                       total=total, rescale_pix=rescale_pix)
-        # print(np.nansum(imarr), oversample, order, total)
-
-        # Rebin NaN image
-        if preserve_nans:
-            imnans = frebin(imnans, scale=oversample, total=False)
-
-        xsh = xshift * oversample
-        ysh = yshift * oversample
-    else:
-        xsh = xshift
-        ysh = yshift
-
-    # print('rebin:', imarr.shape, xsh, ysh, np.nansum(imarr))
-
-    # Perform Gaussian smoothing, lowpass filtering, and image shift
-    imarr_final = fractional_image_shift(imarr, xsh, ysh, method=shift_method, interp=interp,
-                                         gstd_pix=0, window_func=window_func,
-                                         oversample=1, return_oversample=False, **kwargs)
+    # Perform rebinning, Gaussian smoothing, lowpass filtering, and image shift
+    kwargs_sh = {
+        'oversample': oversample, 'return_oversample': return_oversample,
+        'method': shift_method, 'interp': interp, 
+        'gstd_pix': gstd_pix, 'window_func': window_func, 
+        'order': order, 'rescale_pix': rescale_pix,
+        'total': total, 'pad': False, 'cval': 0, 
+    }
+    imarr_final = fractional_image_shift(imarr, xshift, yshift, **kwargs, **kwargs_sh)
 
     # print('shifted:', imarr_final.shape, np.nansum(imarr_final))
-
-    # Shift NaN image
-    if preserve_nans:
-        imnans = fshift(imnans, xsh, ysh, pad=True, cval=1)
-
-    # Resample back to original size
-    if not (return_oversample or oversample==1):
-        imarr_final = frebin(imarr_final, scale=1/oversample, total=total)
-        if preserve_nans:
-            imnans = frebin(imnans, scale=1/oversample, total=False)
-
-        # print('resample:', imarr_final.shape, np.nansum(imarr_final))
 
     # Add NaNs back to the image
     if preserve_nans:
@@ -1134,12 +1133,12 @@ def crop_observation(im_full, ap, xysub, xyloc=None, delx=0, dely=0,
     if delx!=0 or dely!=0:
         kwargs['interp'] = interp
         # Use fshift function if only performing integer shifts
-        if float(delx).is_integer() and float(dely).is_integer():
-            shift_func = fshift
+        # if float(delx).is_integer() and float(dely).is_integer():
+        #     shift_func = fshift
 
         # If NaNs are present, print warning and fill with zeros
         ind_nan = np.isnan(im_full)
-        if np.any(ind_nan):
+        if np.any(ind_nan) and (shift_func is not image_shift_with_nans):
             # _log.warning('NaNs present in image. Filling with zeros.')
             im_full = im_full.copy()
             im_full[ind_nan] = 0
@@ -1166,7 +1165,7 @@ def crop_image(imarr, xysub, xyloc=None, **kwargs):
 
     Parameters
     ----------
-    im : ndarray
+    imarr : ndarray
         Input image or image cube [nz,ny,nx].
     xysub : int, tuple, or list
         Size of subarray to extract. If a single integer is provided,
@@ -2044,6 +2043,63 @@ def distort_image(hdulist_or_filename, ext=0, to_frame='sci', fill_value=0,
     else:
         return psf_new
 
+
+def image_convolution(image, psf, method='scipy', use_fft=None, **kwargs):
+
+    """ Perform image convolution with a PSF kernel
+    
+    Can use either scipy or astropy convolution methods. Both should
+    have produce results.
+    """
+
+    from scipy.signal import choose_conv_method
+    if use_fft is None:
+        res = choose_conv_method(image, psf, mode='same')
+        use_fft = (res == 'fft')
+
+    use_scipy = False
+    use_astropy = False
+    if 'scipy' in method.lower():
+        use_scipy = True
+    elif 'astropy' in method.lower():
+        use_astropy = True
+    else:
+        raise ValueError(f"Method '{method}' not recognized. Must be 'scipy' or 'astropy'.")
+
+    if use_astropy:
+        import astropy.convolution
+
+        if use_fft:
+            from scipy import fftpack
+            cfunc = astropy.convolution.convolve_fft
+            kwargs['fftn'] = fftpack.fftn
+            kwargs['ifftn'] = fftpack.ifftn
+            kwargs['allow_huge'] = True
+        else:
+            # Check if PSF shape is odd in both dimensions
+            if (psf.shape[0] % 2 == 0):
+                _log.warning("PSF shape is even along y-axis. Trimming last row.")
+                psf = psf[:-1,:]
+            if (psf.shape[1] % 2 == 0):
+                _log.warning("PSF shape is even in x-axis. Trimming last column.")
+                psf = psf[:,:-1]
+            cfunc = astropy.convolution.convolve
+
+        # Normalize PSF sum to 1.0
+        norm = psf.sum()
+        return norm * cfunc(image, psf/norm, normalize_kernel=False, **kwargs)
+        
+    elif use_scipy:
+        import scipy.signal
+        if use_fft is None:
+            kwargs['method'] = 'auto'
+        else:
+            kwargs['method'] = 'fft' if use_fft else 'direct'
+
+        kwargs['mode'] = kwargs.get('mode', 'same')
+        return scipy.signal.convolve(image, psf, **kwargs)
+
+
 def _convolve_psfs_for_mp(arg_vals):
     """
     Internal helper routine for parallelizing computations across multiple processors,
@@ -2061,7 +2117,7 @@ def _convolve_psfs_for_mp(arg_vals):
         # Get region to perform convolution
         xtra_pix = int(nx_psf/2 + 10)
         ind = np.argwhere(ind_mask.sum(axis=0)>0)
-        ix1, ix2 = (np.min(ind), np.max(ind))
+        ix1, ix2 = (np.min(ind), np.max(ind)+1)
         ix1 -= xtra_pix
         ix1 = 0 if ix1<0 else ix1
         ix2 += xtra_pix
@@ -2069,58 +2125,49 @@ def _convolve_psfs_for_mp(arg_vals):
         
         xtra_pix = int(ny_psf/2 + 10)
         ind = np.argwhere(ind_mask.sum(axis=1))
-        iy1, iy2 = (np.min(ind), np.max(ind))
+        iy1, iy2 = (np.min(ind), np.max(ind)+1)
         iy1 -= xtra_pix
         iy1 = 0 if iy1<0 else iy1
         iy2 += xtra_pix
         iy2 = ny if iy2>ny else iy2
     except ValueError:
-        # No 
+        # No valid data in the image
         return 0
     
     im_temp = im.copy()
     im_temp[~ind_mask] = 0
     
-    if np.allclose(im_temp,0):
-        # No need to convolve anything if no flux!
-        res = im_temp
-    else:
-        # Normalize PSF sum to 1.0
-        # Otherwise convolve_fft may throw an error if psf.sum() is too small
-        norm = psf.sum()
-        psf = psf / norm
-        res = convolve_fft(im_temp[iy1:iy2,ix1:ix2], psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
-        res *= norm
-        im_temp[iy1:iy2,ix1:ix2] = res
-        res = im_temp
+    # No need to convolve anything if no flux!
+    if not np.allclose(im_temp,0):
+        im_temp[iy1:iy2,ix1:ix2] = image_convolution(im_temp[iy1:iy2,ix1:ix2], psf)
 
-    return res
+    return im_temp
 
 
-def _convolve_psfs_for_mp_old(arg_vals):
-    """
-    Internal helper routine for parallelizing computations across multiple processors,
-    specifically for convolving position-dependent PSFs with an extended image or
-    field of PSFs.
+# def _convolve_psfs_for_mp_old(arg_vals):
+#     """
+#     Internal helper routine for parallelizing computations across multiple processors,
+#     specifically for convolving position-dependent PSFs with an extended image or
+#     field of PSFs.
 
-    """
+#     """
     
-    im, psf, ind_mask = arg_vals
-    im_temp = im.copy()
-    im_temp[~ind_mask] = 0
+#     im, psf, ind_mask = arg_vals
+#     im_temp = im.copy()
+#     im_temp[~ind_mask] = 0
     
-    if np.allclose(im_temp,0):
-        # No need to convolve anything if no flux!
-        res = im_temp
-    else:
-        # Normalize PSF sum to 1.0
-        # Otherwise convolve_fft may throw an error if psf.sum() is too small
-        norm = psf.sum()
-        psf = psf / norm
-        res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
-        res *= norm
+#     if np.allclose(im_temp,0):
+#         # No need to convolve anything if no flux!
+#         res = im_temp
+#     else:
+#         # Normalize PSF sum to 1.0
+#         # Otherwise convolve_fft may throw an error if psf.sum() is too small
+#         norm = psf.sum()
+#         psf = psf / norm
+#         res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+#         res *= norm
 
-    return res
+#     return res
 
 def _crop_hdul(hdul_sci_image, psf_shape):
 
@@ -2188,6 +2235,7 @@ def _crop_hdul(hdul_sci_image, psf_shape):
     hdu.header['IY2'] = iy2
 
     return fits.HDUList([hdu])
+
 
 
 def convolve_image(hdul_sci_image, hdul_psfs, return_hdul=False, 
@@ -2488,7 +2536,16 @@ def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0,
     ============
     order : int, optional
         The order of the spline interpolation, default is 3.
-        The order has to be in the range 0-5.
+        The order has to be in the range 0-5. This also determines the 
+        interpolation value of the shift function if `interp` is not set.
+        if order <=1: interp='linear'; if order <=3; otherwise interp='cubic'.
+    interp : str, optional
+        Interpolation method to use for shifting using 'fshift' or 'opencv. 
+        If not set, will default to method as described by `order` keyword.
+        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
+        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
+    else:
+        interp='quintic'
     mode : {'reflect', 'constant', 'nearest', 'mirror', 'wrap'}, optional
         The `mode` parameter determines how the input array is extended
         beyond its boundaries. Default is 'constant'. Behavior for each valid
@@ -2530,6 +2587,17 @@ def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0,
         _log.warn('`PA_offset` is deprecated. Please use `angle` keyword instead. Setting angle=PA_offset for now.')
         angle = PA_offset
 
+    interp = kwargs.pop('interp', None)
+    # Get position offsets
+    if interp is None:
+        order = kwargs.get('order', 3)
+        if order <=1:
+            interp='linear'
+        elif order <=3:
+            interp='cubic'
+        else:
+            interp='quintic'
+
     # Rotate
     if np.abs(angle)!=0:
         im_rot = rotate(hdul[index].data, -1*angle, reshape=False, **kwargs)
@@ -2537,14 +2605,7 @@ def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0,
         im_rot = hdul[index].data
     delx, dely = np.array([delx_asec, dely_asec]) / hdul[0].header['PIXELSCL']
     
-    # Get position offsets
-    order = kwargs.get('order', 3)
-    if order <=1:
-        interp='linear'
-    elif order <=3:
-        interp='cubic'
-    else:
-        interp='quintic'
+
     im_new = shift_func(im_rot, delx, dely, pad=True, interp=interp)
     
     # Create new HDU and copy header
@@ -2819,7 +2880,8 @@ def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
                                [0.0, alpha_min, 0.0]])
     
         # Convolve IPC kernel with images
-        im_ipc = convolve(im_reshape, kernel).reshape(im_pad.shape)
+        # print('Applying IPC kernel')
+        im_ipc = image_convolution(im_reshape, kernel).reshape(im_pad.shape)
     
     # Exponential coupling strength
     # Equation 7 of Donlon et al. (2018)
@@ -2918,6 +2980,7 @@ def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
 
         x1 = chsize*ch
         x2 = x1 + chsize
+        # print('  Applying PPC as IPC kernel...')
         res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=k)
     
     if ndim==2:
@@ -2938,6 +3001,7 @@ def apply_pixel_diffusion(im, pixel_sigma):
     """
     from scipy.ndimage import gaussian_filter
     if pixel_sigma > 0:
+        # print(f'Applying pixel diffusion of sigma={pixel_sigma} pixels')
         return gaussian_filter(im, pixel_sigma)
     else:
         return im
