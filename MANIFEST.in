@@ -15,3 +15,5 @@ global-exclude am*.fits
 
 prune notebooks
 prune dev_utils
+
+include webbpsf_ext/wext_style.mplstyle
