@@ -138,8 +138,8 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True,
     model_dir = os.path.join(_spec_dir, 'bosz_grids/')
     res_dir = os.path.join(model_dir, f'R{res:.0f}/')
 
-    if not os.path.isdir(model_dir):
-        raise IOError(f'BOSZ model directory does not exist: {model_dir}')
+    if not os.path.isdir(_spec_dir):
+        raise IOError(f'Spectral directory does not exist: {_spec_dir}')
     if not os.path.isdir(res_dir):
         os.makedirs(res_dir)
         # raise IOError('Resolution directory does not exist: {}'.format(res_dir))
@@ -458,8 +458,8 @@ def BOSZ_2024_spectrum(Teff, log_g, metallicity, res=2000,
     model_dir = os.path.join(_spec_dir, 'bosz2024_grids/')
     res_dir = os.path.join(model_dir, f'R{res:.0f}/')
 
-    if not os.path.isdir(model_dir):
-        raise IOError(f'BOSZ model directory does not exist: {model_dir}')
+    if not os.path.isdir(_spec_dir):
+        raise IOError(f'Spectral directory does not exist: {_spec_dir}')
     if not os.path.isdir(res_dir):
         os.makedirs(res_dir)
         # raise IOError('Resolution directory does not exist: {}'.format(res_dir))
