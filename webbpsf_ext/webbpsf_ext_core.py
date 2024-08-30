@@ -1030,7 +1030,7 @@ class NIRCam_ext(webbpsf_NIRCam):
                        xsci_vals=None, ysci_vals=None, return_coords=None, 
                        use_coeff=True, **kwargs):
 
-        """ PSF grid across an instrumnet FoV
+        """ PSF grid across an instrument FoV
         
         Create a grid of PSFs across instrument aperture FoV. By default,
         imaging observations will be for full detector FoV with regularly
@@ -2732,6 +2732,21 @@ def _calc_psf_webbpsf(self, calc_psf_func, add_distortion=None, fov_pixels=None,
         if not return_oversample:
             res = frebin(res, scale=1/self.oversample)
 
+    if coord_vals is not None:
+        cunits = 'pixels' if ('sci' in coord_frame) or ('det' in coord_frame) else 'arcsec'
+        for hdu in hdul:
+            hdr = hdu.header
+            hdr['XVAL']   = (coord_vals[0], f'[{cunits}] Input X coordinate')
+            hdr['YVAL']   = (coord_vals[1], f'[{cunits}] Input Y coordinate')
+            hdr['CFRAME'] = (coord_frame, 'Specified coordinate frame')
+    else:
+        cunits = 'pixels'
+        for hdu in hdul:
+            hdr = hdu.header
+            hdr['XVAL']   = (hdr['DET_X'], f'[{cunits}] Input X coordinate')
+            hdr['YVAL']   = (hdr['DET_Y'], f'[{cunits}] Input Y coordinate')
+            hdr['CFRAME'] = ('sci', 'Specified coordinate frame')
+
     return res
 
 
@@ -4259,7 +4274,7 @@ def _calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True
             psf_all.append(psf)
 
         if return_hdul:
-            xvals, yvals = coord_vals
+            xvals, yvals = coord_vals # coord_vals isn't None for nfield>1
             hdul = fits.HDUList()
             for ii, psf in enumerate(psf_all):
                 hdr = psf_coeff_hdr.copy()
@@ -4707,7 +4722,8 @@ def _calc_psfs_grid(self, sp=None, wfe_drift=0, osamp=1, npsf_per_full_fov=15,
     # Produce grid of PSF locations across the field of view
     if self.is_coron:
         xsci_psf, ysci_psf = coron_grid(self, npsf_per_full_fov, 
-                                        xoff_vals=xsci_vals, yoff_vals=ysci_vals)
+                                        xoff_vals=xsci_vals, 
+                                        yoff_vals=ysci_vals)
     else:
         # No need to go beyond detector pixels
 
