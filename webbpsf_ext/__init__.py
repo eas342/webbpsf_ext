@@ -52,17 +52,21 @@ class Conf(_config.ConfigNamespace):
         data_path = tempfile.gettempdir()
     else:
         data_path = os.getenv('WEBBPSF_EXT_PATH')
-        if data_path is None:
+        if (data_path is None) or (data_path == ''):
             print("WARNING: Environment variable $WEBBPSF_EXT_PATH is not set!")
             import webbpsf
             data_path = webbpsf.utils.get_webbpsf_data_path()
             print("  Setting WEBBPSF_EXT_PATH to WEBBPSF_PATH directory:")
             print(f"  {data_path}")
+
+        if (data_path is None) or (data_path == ''): 
+            raise IOError(f"WEBBPSF_EXT_PATH ({data_path}) is not a valid path! Have you set WEBBPSF_EXT_PATH environment variable?")
+        
         if not os.path.isdir(data_path):
             try:
                 os.makedirs(data_path)
             except:
-                raise IOError(f"WEBBPSF_EXT_PATH ({data_path}) is not a valid directory path!")
+                raise IOError(f"WEBBPSF_EXT_PATH ({data_path}) cannot be created!")
             
     if '/' not in data_path[-1]: 
         # Make sure there is a '/' at the end of the path name

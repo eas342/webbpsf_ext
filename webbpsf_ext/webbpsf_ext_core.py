@@ -2026,7 +2026,13 @@ def _gen_save_dir(self):
     If the directory doesn't exist, try to create it.
     """
     if self._save_dir is None:
-        base_dir = Path(conf.WEBBPSF_EXT_PATH) / 'psf_coeffs/'
+        wext_data_dir = conf.WEBBPSF_EXT_PATH
+        if (wext_data_dir is None) or (wext_data_dir == '/'):
+            wext_data_dir = os.getenv('WEBBPSF_EXT_PATH')
+        if (wext_data_dir is None) or (wext_data_dir == ''):
+            raise IOError(f"WEBBPSF_EXT_PATH ({wext_data_dir}) is not a valid directory path!")
+
+        base_dir = Path(wext_data_dir) / 'psf_coeffs/'
         # Name to save array of oversampled coefficients
         inst_name = self.name
         save_dir = base_dir / f'{inst_name}/'
