@@ -537,7 +537,26 @@ def fractional_image_shift(imarr, xshift, yshift, method='fourier',
         return imarr_shift
 
 def replace_nans_griddata(image, method='cubic', in_place=True, **kwargs):
-    """Replace NaNs in an image using griddata interpolation"""
+    """Replace NaNs in an image using griddata interpolation
+    
+    Parameters
+    ----------
+    image : ndarray
+        2D image [ny,nx].
+    method : str
+        Interpolation method to use for griddata. Default is 'cubic'.
+    in_place : bool
+        Replace NaNs in place. Default is True.
+
+    Keyword Args
+    ------------
+    fill_value : float, optional
+        Value used to fill in for requested points outside of the convex hull of the input points. 
+        If not provided, then the default is nan. This option has no effect for the 'nearest' method.
+    rescale : bool, optional
+        Rescale points to unit cube before performing interpolation. This is useful if some of the 
+        input dimensions have incommensurable units and differ by many orders of magnitude.
+    """
 
     from scipy.interpolate import griddata
 
@@ -582,7 +601,7 @@ def replace_nans(image, mean_func=np.nanmean, in_place=False,
         Set this to None if you want to skip this step and only use griddata replacement.
     use_griddata : bool
         Use griddata interpolation to fix NaNs. Default is True.
-    method : str
+    grid_method : str
         Interpolation method to use for griddata. Default is 'cubic'.
     x_stddev : float
         Standard deviation of Gaussian kernel for smoothing. Default is 2.
