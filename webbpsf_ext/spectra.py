@@ -1178,7 +1178,7 @@ class source_spectrum(object):
 
         bb_flux = x[0] * self.bb_jy(wave/1e4, x[1]) * (wave/1e4)**x[2] / 1e17
         sp_bb = s_ext.ArraySpectrum(wave, bb_flux, fluxunits='Jy')
-        sp_bb.convert('photlam')
+        sp_bb.convert(sp.fluxunits)
 
         return sp + sp_bb
 
@@ -1222,7 +1222,7 @@ class source_spectrum(object):
         mod_interp = np.interp(wvals, sp_star.wave, sp_model.flux)
 
         # Normalize values so the residuals aren't super small/large
-        norm = np.mean(yvals)
+        norm = np.nanmedian(yvals)
 
         resid = (mod_interp - yvals)
         if use_err: resid /= evals
