@@ -748,7 +748,7 @@ def read_sgd_files(indir, pid, obsid, filter, sca, bpfix=False,
     files = get_files(indir, pid, obsid=obsid, sca=sca, filt=filter,
                       file_type=file_type, exp_type=exp_type, vst_grp_act=vst_grp_act,
                       apername=apername, apername_pps=apername_pps)
-    
+
     if len(files)==0:
         _log.warning(f'No files found for PID {pid}, Obs {obsid}, {sca} with filter {filter}')
         _log.warning(f'file_type={file_type}, exp_type={exp_type}, vst_grp_act={vst_grp_act}, apername={apername}, apername_pps={apername_pps}')
@@ -766,6 +766,12 @@ def read_sgd_files(indir, pid, obsid, filter, sca, bpfix=False,
                 ikeep.append(i)
         
         files = files[ikeep]
+
+    if len(files)==0:
+        _log.warning(f'No science files found for PID {pid}, Obs {obsid}, {sca} with filter {filter}')
+        _log.warning(f'file_type={file_type}, exp_type={exp_type}, vst_grp_act={vst_grp_act}, apername={apername}, apername_pps={apername_pps}')
+        _log.warning(f'Input directory: {indir}')
+        return {}
 
     sgd_dict = {}
     for i, f in enumerate(files):
