@@ -202,12 +202,14 @@ def get_files(indir, pid=None, obsid=None, sca=None, filt=None, file_type='uncal
     
     # Filter by obsid
     if obsid is not None:
-        files2 = []
-        for f in allfiles:
-            hdr = fits.getheader(os.path.join(indir,f))
-            if int(hdr.get('OBSERVTN', -1))==obsid:
-                files2.append(f)
-        allfiles = np.array(files2)
+        # files2 = []
+        # for f in allfiles:
+        #     hdr = fits.getheader(os.path.join(indir,f))
+        #     if int(hdr.get('OBSERVTN', -1))==obsid:
+        #         files2.append(f)
+        # allfiles = np.array(files2)
+        fstart = f'jw{pid:05d}{obsid:03d}'
+        allfiles = np.array([f for f in allfiles if f.startswith(fstart)])
 
     # Check filter info
     if filt is not None:
@@ -411,8 +413,8 @@ def tasub_to_apname(tasub):
     # Dictionary of aperture names
     apname_dict={
         'SUBFSA210R' : 'NRCA2_FSTAMASK210R' ,
-        'SUBFSA335R' : 'NRCA5_FSTAMASKM335R',
-        'SUBFSA430R' : 'NRCA5_FSTAMASKM430R',
+        'SUBFSA335R' : 'NRCA5_FSTAMASK335R',
+        'SUBFSA430R' : 'NRCA5_FSTAMASK430R',
         'SUBFSALWB'  : 'NRCA5_FSTAMASKLWB'  ,
         'SUBFSASWB'  : 'NRCA4_FSTAMASKSWB'  ,
         'SUBNDA210R' : 'NRCA2_TAMASK210R'   ,
@@ -490,14 +492,16 @@ def find_centroid_det(eventlog, selected_visit_id):
     in_selected_visit = False
     ta_only = True
     in_ta = False
+    tasub = None
 
     for value in reader(eventlog, delimiter=',', quotechar='"'):
         val_str = value[2]
 
         # Get subarray name for visit
-        if in_selected_visit and  'Configured NIRCam subarray' in val_str:
+        if in_selected_visit and  ('Configured NIRCam subarray' in val_str):
             val_str_list = val_str.split(' ')
-            tasub = val_str_list[-1].split(',')[0]
+            if tasub is None:
+                tasub = val_str_list[-1].split(',')[0]
             _log.info(val_str)
             
         if in_selected_visit and ((not ta_only) or in_ta) :
@@ -520,7 +524,18 @@ def find_centroid_det(eventlog, selected_visit_id):
                 peak_coords = (float(xcen), float(ycen))
 
             # Parse centroid position reported in detector coordinates
-            if 'detector coord (colCentroid, rowCentroid)' in val_str:
+            if ('detector coord (colCentroid, rowCentroid)') in val_str or \
+               ('detector coord (colCen, rowCen)' in val_str):
+                val_str_list = val_str.split('=')
+                xcen, ycen = val_str_list[1].split(',')
+                ind1 = xcen.find('(')
+                xcen = xcen[ind1+1:]
+                ind2 = ycen.find(')')
+                ycen = ycen[0:ind2]
+
+                return float(xcen), float(ycen)
+            
+            elif 'detector coord (colCen, rowCen)' in val_str:
                 val_str_list = val_str.split('=')
                 xcen, ycen = val_str_list[1].split(',')
                 ind1 = xcen.find('(')
@@ -539,6 +554,7 @@ def find_centroid_det(eventlog, selected_visit_id):
                 if vid==selected_visit_id:
                     _log.debug(f"VISIT {selected_visit_id} START FOUND at {vstart}")
                     in_selected_visit = True
+                    tasub = None
                     # if ta_only:
                     #     print("Only displaying TARGET ACQUISITION RESULTS:")
 
