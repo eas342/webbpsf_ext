@@ -15,6 +15,7 @@ from .utils import pysiaf
 from .utils import siaf_nrc, siaf_nis, siaf_mir, siaf_fgs, siaf_nrs
 si_match = {'NRC': siaf_nrc, 'NIS': siaf_nis, 'MIR': siaf_mir, 'NRS': siaf_nrs, 'FGS': siaf_fgs}
 
+from .image_manip import get_im_cen
 
 def dist_image(image, pixscale=None, center=None, return_theta=False):
     """Pixel distances
@@ -129,6 +130,28 @@ def xy_rot(x, y, ang):
     r, theta = xy_to_rtheta(x, y)    
     return rtheta_to_xy(r, theta+ang)
 
+
+def oversampled_coords(coords, oversample):
+    """Transform image index to oversampled image index
+    
+    Assumes 0-based indexing where the center of a pixel
+    corresponds to the integer index. That is, the center
+    of the first pixel is at 0.0, and the center of the last
+    pixel is at N-1.0 where N is the number of pixels.
+
+    Parameters
+    ----------
+    coords : float or array-like
+        Image index or indices
+    oversample : int
+        Oversampling factor
+
+    Returns
+    -------
+    float or array-like
+        Oversampled image index or indices
+    """
+    return (coords + 0.5) * oversample - 0.5
 
 ###########################################################################
 #    NIRCam SIAF helper functions
