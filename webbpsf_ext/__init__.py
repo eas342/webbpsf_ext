@@ -64,13 +64,13 @@ class Conf(_config.ConfigNamespace):
         
         if not os.path.isdir(data_path):
             try:
+                print(f"Attempting to create directory {data_path}")
                 os.makedirs(data_path)
             except:
                 raise IOError(f"WEBBPSF_EXT_PATH ({data_path}) cannot be created!")
             
-    if '/' not in data_path[-1]: 
-        # Make sure there is a '/' at the end of the path name
-        data_path = os.path.join(data_path, '/')
+    # Make sure there is a '/' at the end of the path name
+    data_path = os.path.join(data_path, '')
 
     WEBBPSF_EXT_PATH = _config.ConfigItem(data_path, 'Directory path to data files \
                                     required for webbpsf_ext calculations.')
