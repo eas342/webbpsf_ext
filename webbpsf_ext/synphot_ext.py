@@ -291,11 +291,36 @@ class UniformTransmission(Bandpass):
         return None
 
 def ObsBandpass(filtername):
+    """Load pre-defined filter bandpass.
+
+    Parameters
+    ----------
+    filtername : str
+        Filter name. Choose from 'bessel_j', 'bessel_h', 'bessel_k',
+        'cousins_r', 'cousins_i', 'johnson_u', 'johnson_b', 'johnson_v',
+        'johnson_r', 'johnson_i', 'johnson_j', or 'johnson_k'.
+
+    kwargs : dict
+        Keywords acceptable by :func:`~synphot.specio.read_remote_spec`.
+
+    Returns
+    -------
+    bp : `SpectralElement`
+        Empirical bandpass.
+
+    Raises
+    ------
+    synphot.exceptions.SynphotError
+        Invalid filter name.
+
+    """
 
     # check if 'bessel', 'johnson', or 'cousins' string exist in filtername
     filtername_lower = filtername.lower()
     if np.any([s in filtername_lower for s in ['bessel', 'johnson', 'cousins']]):
         return Bandpass.from_filter(filtername_lower.replace(',', '_'))
+    elif filtername_lower in 'ubvrijk':
+        return Bandpass.from_filter('johnson_' + filtername_lower)
     else:
         raise ValueError(f'{filtername} not a valid bandpass. If using HST filters, use stsynphot package.')
 

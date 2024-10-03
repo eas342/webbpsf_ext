@@ -893,7 +893,7 @@ def download_votable(target_name, radius=1, **kwargs):
 
     Reads from Vizier URL: 
     
-        f'ttps://vizier.cds.unistra.fr/viz-bin/sed?-c={target}&-c.rs={radius}'
+        f'https://vizier.cds.unistra.fr/viz-bin/sed?-c={target}&-c.rs={radius}'
 
     Parameters
     ----------
