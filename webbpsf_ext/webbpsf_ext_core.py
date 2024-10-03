@@ -4901,7 +4901,7 @@ def nrc_mask_trans(image_mask, x, y):
         else:
             raise NotImplementedError(f"{image_mask} not a valid name for NIRCam wedge occulter")
 
-        sigmas = scipy.poly1d(polyfitcoeffs)(scalefact)
+        sigmas = np.poly1d(polyfitcoeffs)(scalefact)
 
         sigmar = sigmas * np.abs(y)
         # clip sigma: The minimum is to avoid divide by zero
