@@ -645,7 +645,7 @@ def read_ta_files(indir, pid, obsid, sca, file_type='rate.fits',
     # Get TACQ
     try:
         fta = get_files(ta_dir, pid, obsid=obsid, sca=sca, 
-                        file_type=fta_type, exp_type='NRC_TACQ')[0]
+                        file_type=fta_type, exp_type='NRC_TACQ')[-1]
     except:
         raise RuntimeError(f'Unable to determine NRC_TACQ file for PID {pid} Obs, {obsid}, {sca}')
 
