@@ -114,6 +114,12 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         npix : int
             Size of OPD: npix x npix
         """
+        transmission = kwargs.pop('transmission', None)
+        import six
+        if isinstance(transmission, six.string_types) and (not os.path.exists(transmission)):
+            wdir = webbpsf.utils.get_webbpsf_data_path()
+            transmission = os.path.join(wdir, transmission)
+            kwargs['transmission'] = transmission
         
         # Initialize OTE_Linear_Model_WSS
         OTE_Linear_Model_WSS.__init__(self, **kwargs)
