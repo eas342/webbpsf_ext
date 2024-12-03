@@ -1948,6 +1948,8 @@ def _init_inst(self, filter=None, pupil_mask=None, image_mask=None,
     if kw_pupilopd is not None:
         self.pupilopd = kw_pupilopd
 
+    # Check consistency of pupil and pupilopd
+    _check_opd_size(self, update=True)
 
     # Name to save array of oversampled coefficients
     self._save_dir = None
@@ -2222,16 +2224,25 @@ def _get_opd_info(self, opd=None, pupil=None, HDUL_to_OTELM=True):
         # A custom OPD is passed. 
         opd_name = 'OPD from FITS HDUList'
         opd_num = 0
-        opd_str = 'OPDcustomHDUL'
+        opd_str = f'OPDcustomHDUL{opd[0].data.shape[-1]}'
+        obsdate = opd[0].header.get('DATE-OBS', None)
+        if obsdate is not None:
+            opd_str = f'{opd_str}-{obsdate}'
     elif isinstance(opd, poppy.OpticalElement):
         # OTE Linear Model
         # opd_name = 'OPD from OTE LM'
         opd_name = opd.name
         opd_num = 0
-        opd_str = 'OPDcustomLM'
+        opd_str = f'OPDcustomLM{opd.npix}'
+        obsdate = opd.header.get('DATE-OBS', None)
+        if obsdate is not None:
+            opd_str = f'{opd_str}-{obsdate}'
     else:
         raise ValueError("OPD must be a string, tuple, HDUList, or OTE LM.")
         
+    # Check pupil sizes match OPD
+    _check_opd_size(self, update=True)
+
     # OPD should now be an HDUList or OTE LM
     # Convert to OTE LM if HDUList
     if HDUL_to_OTELM and isinstance(opd, fits.HDUList):
@@ -2242,8 +2253,17 @@ def _get_opd_info(self, opd=None, pupil=None, HDUL_to_OTELM=True):
         header['SLICE']    = (opd_num,    "Slice index of original OPD")
         #header['WFEDRIFT'] = (self.wfe_drift, "WFE drift amount [nm]")
 
+        if isinstance(pupil, six.string_types) and (not os.path.exists(pupil)):
+            wdir = webbpsf.utils.get_webbpsf_data_path()
+            pupil = os.path.join(wdir, pupil)
+
+        if isinstance(pupil, six.string_types):
+            npix_pupil = int(pupil[pupil.find('npix') + len('npix'):pupil.find('.fits')])
+        else:
+            npix_pupil = pupil[0].data.shape[-1]
+
         name = 'Modified from ' + opd_name
-        opd = OTE_Linear_Model_WSS(name=name, transmission=pupil,
+        opd = OTE_Linear_Model_WSS(name=name, transmission=pupil, npix=npix_pupil,
                                    opd=hdul, opd_index=opd_num, 
                                    v2v3=self._tel_coords(),
                                    include_nominal_field_dependence=self.include_ote_field_dependence)
@@ -2252,6 +2272,58 @@ def _get_opd_info(self, opd=None, pupil=None, HDUL_to_OTELM=True):
 
     out_dict = {'opd_name':opd_name, 'opd_num':opd_num, 'opd_str':opd_str, 'pupilopd':opd}
     return out_dict
+
+def _check_opd_size(self, update=True):
+
+    # Pupil
+    pupil = self.pupil
+
+    # Get pupil size
+    if isinstance(pupil, fits.HDUList):
+        npix_pupil = pupil[0].data.shape[-1]
+    else:
+        npix_pupil = int(pupil[pupil.find('npix') + len('npix'):pupil.find('.fits')])
+
+    # OPD
+    opd = self.pupilopd
+
+    # If OPD is None or a string, make into tuple
+    if opd is None:  # Default OPD
+        opd = self._opd_default
+    elif isinstance(opd, six.string_types):
+        opd = (opd, 0)
+
+    # Parse OPD info
+    if isinstance(opd, tuple):
+        if not len(opd)==2:
+            raise ValueError("opd passed as tuple must have length of 2.")
+        # Filename info
+        opd_name = opd[0] # OPD file name
+        opd_num  = opd[1] # OPD slice
+        opd = OPDFile_to_HDUList(opd_name, opd_num)
+        npix_opd = opd[0].data.shape[-1]
+    elif isinstance(opd, fits.HDUList):
+        npix_opd = opd[0].data.shape[-1]
+    elif isinstance(opd, poppy.OpticalElement):
+        npix_opd = opd.npix
+    else:
+        raise ValueError("OPD must be a string, tuple, HDUList, or OTE LM.")
+
+    if npix_pupil == npix_opd:
+        return True
+    else:
+        if update:
+            _log.warning('Pupil and OPD sizes do not match. Resizing OPD to match pupil.')
+            header = opd[0].header if isinstance(opd, fits.HDUList) else opd.header
+            date_obs = header.get('DATE-OBS', '2022-07-30')
+            time_obs = header.get('TIME-OBS', '00:00:00')[0:8]
+            date_time = date_obs + 'T' + time_obs
+            self.load_wss_opd_by_date(date_time, verbose=False)
+            return True
+        else:
+            _log.warning('Pupil and OPD sizes do not match!')
+            return False
+
 
 def _drift_opd(self, wfe_drift, opd=None, wfe_therm=None, wfe_frill=None, wfe_iec=None):
     """
