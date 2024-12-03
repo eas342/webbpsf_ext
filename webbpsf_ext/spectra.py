@@ -2446,7 +2446,7 @@ def companion_spec(bandpass, model='SB12', atmo='hy3s', mass=10, age=100, entrop
 
     sptype : str
         Instead of using a exoplanet spectrum, specify a stellar type.
-    renorm_args : dict
+    renorm_args : tuple
         Renormalization arguments in case you want
         very specific luminosity in some bandpass.
         Includes (value, units, bandpass).
@@ -2489,7 +2489,7 @@ def companion_spec(bandpass, model='SB12', atmo='hy3s', mass=10, age=100, entrop
         # Ensure there is a data point at the edge of the input bandpass
         if sp_overlap != 'full':
             w_end = np.max(bandpass.wave)
-            f_end = sp.sample(w_end)
+            f_end = sp(w_end)
             w_new = np.append(sp.wave, w_end)
             f_new = np.append(sp.flux, f_end)
             sp = s_ext.ArraySpectrum(w_new, f_new, waveunits=sp.waveunits, fluxunits=sp.fluxunits)
