@@ -2067,8 +2067,8 @@ def image_convolution(image, psf, method='scipy', use_fft=None, **kwargs):
 
     """ Perform image convolution with a PSF kernel
     
-    Can use either scipy or astropy convolution methods. Both should
-    have produce results.
+    Can use either scipy or astropy convolution methods. 
+    Both should produce the same results.
     """
 
     from scipy.signal import choose_conv_method
@@ -2527,7 +2527,7 @@ def make_disk_image(inst, disk_params, sp_star=None, pixscale_out=None, dist_out
     return hdul_disk_image
 
 def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0, 
-                       shift_func=fshift, **kwargs):
+                       shift_func=fshift, reshape=False, **kwargs):
     """ Rotate/Shift image
     
     Rotate then offset image by some amount.
@@ -2603,7 +2603,7 @@ def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0,
 
     PA_offset = kwargs.get('PA_offset')
     if PA_offset is not None:
-        _log.warn('`PA_offset` is deprecated. Please use `angle` keyword instead. Setting angle=PA_offset for now.')
+        _log.warning('`PA_offset` is deprecated. Please use `angle` keyword instead. Setting angle=PA_offset for now.')
         angle = PA_offset
 
     interp = kwargs.pop('interp', None)
@@ -2618,14 +2618,22 @@ def rotate_shift_image(hdul, index=0, angle=0, delx_asec=0, dely_asec=0,
             interp='quintic'
 
     # Rotate
-    if np.abs(angle)!=0:
-        im_rot = rotate(hdul[index].data, -1*angle, reshape=False, **kwargs)
-    else:
-        im_rot = hdul[index].data
-    delx, dely = np.array([delx_asec, dely_asec]) / hdul[0].header['PIXELSCL']
+    im_rot = rotate_offset(hdul[index].data, -1*angle, reshape=reshape, **kwargs)
     
-
-    im_new = shift_func(im_rot, delx, dely, pad=True, interp=interp)
+    # Shift
+    delx, dely = np.array([delx_asec, dely_asec]) / hdul[0].header['PIXELSCL']
+    if reshape:
+        # Pad based on shift values
+        # pad_x1 = int(np.abs(np.floor(delx))) if delx < 0 else 0
+        # pad_x2 = int(np.abs(np.ceil(delx))) if delx > 0 else 0
+        # pad_y1 = int(np.abs(np.floor(dely))) if dely < 0 else 0
+        # pad_y2 = int(np.abs(np.ceil(dely))) if dely > 0 else 0
+        # pad = ((pad_y1, pad_y2), (pad_x1, pad_x2))
+        padx = int(np.ceil(np.abs(delx)))
+        pady = int(np.ceil(np.abs(dely)))
+        pad = ((pady,pady), (padx,padx))
+        im_rot = np.pad(im_rot, pad)
+    im_new = shift_func(im_rot, delx, dely, pad=False, interp=interp)
     
     # Create new HDU and copy header
     hdu_new = fits.PrimaryHDU(im_new)
