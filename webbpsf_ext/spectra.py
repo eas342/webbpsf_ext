@@ -835,7 +835,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
             sp = call_bosz(v0,v1,v2,**kwargs)
         else:
             if ('ck04models' in catname.lower()) and (v0<3500):
-                _log.warn("ck04 models stop at 3500K. Setting Teff=3500.")
+                _log.warning("ck04 models stop at 3500K. Setting Teff=3500.")
                 v0 = 3500
             sp = s_ext.Icat(catname, v0, v1, v2)
         sp.name = '({:.0f},{:0.1f},{:0.1f})'.format(v0,v1,v2)
@@ -851,7 +851,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
             sp = call_bosz(v0,v1,v2,**kwargs)
         else:
             if ('ck04models' in catname.lower()) and (v0<3500):
-                _log.warn("ck04 models start at 3500K. Setting Teff=3500.")
+                _log.warning("ck04 models start at 3500K. Setting Teff=3500.")
                 v0 = 3500
             sp = s_ext.Icat(catname, v0, v1, v2)
         sp.name = sptype
@@ -873,7 +873,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
             sp = call_bosz(v0,v1,v2,**kwargs)
         else:
             if ('ck04models' in catname.lower()) and (v0<3500):
-                _log.warn("ck04 models stop at 3500K. Setting Teff=3500.")
+                _log.warning("ck04 models stop at 3500K. Setting Teff=3500.")
                 v0 = 3500
             sp = s_ext.Icat(catname, v0, v1, v2)
         sp.name = sptype
@@ -2498,8 +2498,8 @@ def companion_spec(bandpass, model='SB12', atmo='hy3s', mass=10, age=100, entrop
         # Add accretion mag offsets for BEX and COND models
         if (model.lower() in ['bex', 'cond']) and (accr == True):
             if sp_overlap != 'full':
-                _log.warn(f"Overlap between spectrum and bandpass: {sp_overlap}.")
-                _log.warn("Accretion calculation may be unreliable.")
+                _log.warning(f"Overlap between spectrum and bandpass: {sp_overlap}.")
+                _log.warning("Accretion calculation may be unreliable.")
             pl = {
                 'atmo': atmo, 'mass': mass, 'age': age,
                 'entropy': entropy, 'distance': dist,
@@ -2527,8 +2527,8 @@ def companion_spec(bandpass, model='SB12', atmo='hy3s', mass=10, age=100, entrop
 
             if model.lower() in ['bex', 'cond']:
                 if sp_overlap != 'full':
-                    _log.warn(f"Overlap between spectrum and bandpass: {sp_overlap}.")
-                    _log.warn("Extinction calculation may be unreliable.")
+                    _log.warning(f"Overlap between spectrum and bandpass: {sp_overlap}.")
+                    _log.warning("Extinction calculation may be unreliable.")
                 obs = s_ext.Observation(sp, bandpass, binset=bandpass.wave)
                 obs_ext = s_ext.Observation(sp_ext, bandpass, binset=bandpass.wave)
                 del_mag += obs_ext.effstim('vegamag') - obs.effstim('vegamag')
@@ -2557,10 +2557,14 @@ def companion_spec(bandpass, model='SB12', atmo='hy3s', mass=10, age=100, entrop
             sp_norm = sp.renorm(*renorm_args, force=True)
             sp = sp_norm
         elif sp_overlap != 'full':
-            _log.warn(f"Overlap between spectrum and bandpass: {sp_overlap}.")
-            _log.warn("Recommend supplying renorm_args input.")
+            _log.warning(f"Overlap between spectrum and bandpass: {sp_overlap}.")
+            _log.warning("Recommend supplying renorm_args input.")
    
     elif model.lower() in ['bosz', 'ck04models', 'phoenix']:
+        if sptype is None:
+            _log.warning('sptype not specified. Using "flat".')
+            sptype = 'flat'
+            
         pl = {'sptype': sptype, 'Av': Av, 'renorm_args': renorm_args}
         sp = stellar_spectrum(sptype)
         if Av>0: 

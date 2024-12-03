@@ -151,7 +151,7 @@ def ipc_info(sca_input):
     keys = list(ipc_dict.keys())
     if sca not in keys:
         a1, a2 = (0.005,0.0003)
-        _log.warn(f"{sca_input} ({sca}) does not match known NIRCam SCA. \
+        _log.warning(f"{sca_input} ({sca}) does not match known NIRCam SCA. \
                     Defaulting to ({a1:.4f}, {a2:.4f}).")
     else:
         a1, a2 = ipc_dict.get(sca)
@@ -199,7 +199,7 @@ def ppc_info(sca_input):
     keys = list(ppc_dict.keys())
     if sca not in keys:
         ppc_frac = 0.001
-        _log.warn(f"{sca_input} ({sca}) does not match known NIRCam SCA. \
+        _log.warning(f"{sca_input} ({sca}) does not match known NIRCam SCA. \
                     Defaulting to {ppc_frac:.3f}.")
     else:
         ppc_frac = ppc_dict.get(sca)

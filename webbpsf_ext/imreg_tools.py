@@ -2212,7 +2212,7 @@ def download_file(filename, outdir=None, timeout=None, mast_api_token=None,
     if 'content-length' in response.headers:
         length = int(response.headers['content-length'])
         if length == 0:
-            _log.warn(f'URL {url} has length=0')
+            _log.warning(f'URL {url} has length=0')
     else:
         length = None
 

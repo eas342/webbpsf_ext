@@ -59,7 +59,7 @@ def nproc_use(fov_pix, oversample, nwavelengths, coron=False):
     reserve_GB = nwavelengths * fov_pix_over**2 * 8 / 1024**3
     # If not enough available memory, then just return nproc=1
     if avail_GB < reserve_GB:
-        _log.warn('Not enough available memory ({} GB) to \
+        _log.warning('Not enough available memory ({} GB) to \
                    to hold resulting PSF info ({} GB)!'.\
                    format(avail_GB,reserve_GB))
         return 1
