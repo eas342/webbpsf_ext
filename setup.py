@@ -82,6 +82,7 @@ install_requires = [
     'poppy>=1.1.0',
     'webbpsf>=1.3.0',
     'pysiaf>=0.22.0',
+    'stsynphot'
 ]
 
 setup_requirements = ['pytest-runner', ]
